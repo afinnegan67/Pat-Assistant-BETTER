@@ -9,8 +9,8 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
 const CONFIRMATION_THRESHOLD_SECONDS = 30 * 60;
 
 async function transcribeAudio(audioBuffer: Buffer): Promise<{ text: string; duration: number }> {
-  // Use Blob directly with filename as third arg - File constructor doesn't work in serverless
-  const audioBlob = new Blob([audioBuffer], { type: 'audio/webm' });
+  // Convert Buffer to Uint8Array for Blob compatibility, use filename as third arg to append
+  const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/webm' });
 
   const formData = new FormData();
   formData.append('file', audioBlob, 'recording.webm');

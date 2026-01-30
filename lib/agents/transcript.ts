@@ -1,10 +1,11 @@
+import { generateText, Output } from 'ai';
+import { fastModel } from '@/lib/services/ai-provider';
+import { TranscriptResultSchema, type TranscriptResultOutput } from '@/lib/schemas/agent-schemas';
 import type {
   TranscriptProcessingResult,
-  ChatMessage,
   TaskPriority,
   KnowledgeSource,
 } from '@/lib/utils/types';
-import { callFastModelJSON } from '@/lib/services/openrouter';
 import { createTask, createProject, addProjectKnowledge, getProjectByName, getAllProjects } from '@/lib/db/queries';
 import { generateEmbedding } from '@/lib/db/embeddings';
 
@@ -22,35 +23,7 @@ const TRANSCRIPT_SYSTEM_PROMPT = `You are the transcript processor for Patrick's
 
 3. NEW PROJECTS: Any new job sites or projects mentioned that don't exist
 
-For each task extracted:
-{
-  "description": "string",
-  "project_name": "string or null",
-  "deadline": "string or null",
-  "priority": "string or null"
-}
-
-For each knowledge chunk:
-{
-  "project_name": "string or null",
-  "content": "string (the atomic fact or decision)"
-}
-
-For new projects:
-{
-  "name": "string",
-  "client_name": "string or null",
-  "project_type": "string or null"
-}
-
-Be thorough but precise. Don't invent information not in the transcript.
-
-Respond with JSON:
-{
-  "tasks": [...],
-  "knowledge": [...],
-  "new_projects": [...]
-}`;
+Be thorough but precise. Don't invent information not in the transcript.`;
 
 /**
  * Process a transcript and extract tasks, knowledge, and new projects
@@ -63,40 +36,23 @@ export async function processTranscript(
   const existingProjects = await getAllProjects();
   const projectNames = existingProjects.map(p => p.name).join(', ');
 
-  const messages: ChatMessage[] = [
-    { role: 'system', content: TRANSCRIPT_SYSTEM_PROMPT },
-    {
-      role: 'user',
-      content: `Existing projects: ${projectNames || 'None'}
+  try {
+    const { output: result } = await generateText({
+      model: fastModel,
+      output: Output.object({
+        schema: TranscriptResultSchema,
+      }),
+      system: TRANSCRIPT_SYSTEM_PROMPT,
+      prompt: `Existing projects: ${projectNames || 'None'}
 
 Transcript:
 ${transcript}
 
 Extract all tasks, knowledge, and new projects from this transcript.`,
-    },
-  ];
+    });
 
-  try {
-    const result = await callFastModelJSON<TranscriptProcessingResult>(messages);
-
-    // Validate and clean the result
-    return {
-      tasks: (result.tasks || []).map(task => ({
-        description: task.description || '',
-        project_name: task.project_name || null,
-        deadline: task.deadline || null,
-        priority: validatePriority(task.priority),
-      })),
-      knowledge: (result.knowledge || []).map(k => ({
-        project_name: k.project_name || null,
-        content: k.content || '',
-      })),
-      new_projects: (result.new_projects || []).map(p => ({
-        name: p.name || '',
-        client_name: p.client_name || null,
-        project_type: p.project_type || null,
-      })),
-    };
+    // Zod schema already validated and provided defaults
+    return result as TranscriptProcessingResult;
   } catch (error) {
     console.error('Transcript processing error:', error);
     return {
@@ -105,13 +61,6 @@ Extract all tasks, knowledge, and new projects from this transcript.`,
       new_projects: [],
     };
   }
-}
-
-function validatePriority(priority: string | null | undefined): TaskPriority | null {
-  if (!priority) return null;
-  const valid: TaskPriority[] = ['low', 'medium', 'high', 'urgent'];
-  const lower = priority.toLowerCase() as TaskPriority;
-  return valid.includes(lower) ? lower : null;
 }
 
 /**
@@ -168,7 +117,7 @@ export async function commitTranscriptData(
       description: task.description,
       project_id: projectId,
       deadline: task.deadline,
-      priority: task.priority || 'medium',
+      priority: (task.priority || 'medium') as TaskPriority,
     });
 
     tasksCreated++;

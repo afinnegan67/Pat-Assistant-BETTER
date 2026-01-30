@@ -1,11 +1,12 @@
+import { generateText, Output } from 'ai';
+import { fastModel } from '@/lib/services/ai-provider';
+import { TaskAgentResponseSchema, type TaskAgentResponseOutput } from '@/lib/schemas/agent-schemas';
 import type {
   AgentContext,
   TaskAgentResult,
   Task,
-  ChatMessage,
   TaskPriority,
 } from '@/lib/utils/types';
-import { callFastModelJSON } from '@/lib/services/openrouter';
 import {
   createTask,
   updateTask,
@@ -45,32 +46,7 @@ For task_complete:
 
 For task_query:
 - Query tasks based on filters (project, status, deadline)
-- Return list of matching tasks
-
-Respond in JSON format:
-{
-  "action": "create" | "update" | "complete" | "query",
-  "task_description": "string (for create)",
-  "task_id": "string (for update/complete)",
-  "project_id": "string or null",
-  "deadline": "ISO date string or null",
-  "priority": "low" | "medium" | "high" | "urgent" | null,
-  "updates": { "field": "value" } (for update),
-  "query_type": "all" | "project" | "overdue" | "today" | "search" (for query),
-  "search_term": "string (for search query)"
-}`;
-
-interface TaskAgentResponse {
-  action: 'create' | 'update' | 'complete' | 'query';
-  task_description?: string;
-  task_id?: string;
-  project_id?: string | null;
-  deadline?: string | null;
-  priority?: TaskPriority | null;
-  updates?: Partial<Pick<Task, 'description' | 'priority' | 'deadline' | 'status'>>;
-  query_type?: 'all' | 'project' | 'overdue' | 'today' | 'search';
-  search_term?: string;
-}
+- Return list of matching tasks`;
 
 function formatContextForPrompt(context: AgentContext): string {
   const parts: string[] = [
@@ -101,16 +77,15 @@ function formatContextForPrompt(context: AgentContext): string {
  * Handle task-related intents
  */
 export async function handleTaskIntent(context: AgentContext): Promise<TaskAgentResult> {
-  const messages: ChatMessage[] = [
-    { role: 'system', content: TASK_SYSTEM_PROMPT },
-    {
-      role: 'user',
-      content: formatContextForPrompt(context),
-    },
-  ];
-
   try {
-    const response = await callFastModelJSON<TaskAgentResponse>(messages);
+    const { output: response } = await generateText({
+      model: fastModel,
+      output: Output.object({
+        schema: TaskAgentResponseSchema,
+      }),
+      system: TASK_SYSTEM_PROMPT,
+      prompt: formatContextForPrompt(context),
+    });
 
     switch (response.action) {
       case 'create':
@@ -145,7 +120,7 @@ export async function handleTaskIntent(context: AgentContext): Promise<TaskAgent
 }
 
 async function handleTaskCreate(
-  response: TaskAgentResponse,
+  response: TaskAgentResponseOutput,
   context: AgentContext
 ): Promise<TaskAgentResult> {
   if (!response.task_description) {
@@ -164,7 +139,7 @@ async function handleTaskCreate(
     description: response.task_description,
     project_id: projectId,
     deadline: response.deadline,
-    priority: response.priority || 'medium',
+    priority: (response.priority || 'medium') as TaskPriority,
   });
 
   return {
@@ -176,7 +151,7 @@ async function handleTaskCreate(
 }
 
 async function handleTaskUpdate(
-  response: TaskAgentResponse,
+  response: TaskAgentResponseOutput,
   context: AgentContext
 ): Promise<TaskAgentResult> {
   // Get task ID from response, resolved entities, or context
@@ -208,10 +183,10 @@ async function handleTaskUpdate(
   const updates: Partial<Pick<Task, 'description' | 'priority' | 'deadline' | 'status'>> = {};
 
   if (response.updates?.description) updates.description = response.updates.description;
-  if (response.updates?.priority) updates.priority = response.updates.priority;
+  if (response.updates?.priority) updates.priority = response.updates.priority as TaskPriority;
   if (response.updates?.deadline) updates.deadline = response.updates.deadline;
   if (response.updates?.status) updates.status = response.updates.status;
-  if (response.priority) updates.priority = response.priority;
+  if (response.priority) updates.priority = response.priority as TaskPriority;
   if (response.deadline) updates.deadline = response.deadline;
 
   const task = await updateTask(taskId, updates);
@@ -225,7 +200,7 @@ async function handleTaskUpdate(
 }
 
 async function handleTaskComplete(
-  response: TaskAgentResponse,
+  response: TaskAgentResponseOutput,
   context: AgentContext
 ): Promise<TaskAgentResult> {
   // Get task ID from response, resolved entities, or context
@@ -264,7 +239,7 @@ async function handleTaskComplete(
 }
 
 async function handleTaskQuery(
-  response: TaskAgentResponse,
+  response: TaskAgentResponseOutput,
   context: AgentContext
 ): Promise<TaskAgentResult> {
   let tasks: Task[] = [];

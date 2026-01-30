@@ -1,10 +1,11 @@
+import { generateText, Output } from 'ai';
+import { fastModel } from '@/lib/services/ai-provider';
+import { ProjectAgentResponseSchema, type ProjectAgentResponseOutput } from '@/lib/schemas/agent-schemas';
 import type {
   AgentContext,
   ProjectAgentResult,
-  ChatMessage,
   ProjectStatus,
 } from '@/lib/utils/types';
-import { callFastModelJSON } from '@/lib/services/openrouter';
 import { createProject, updateProject, getProjectById } from '@/lib/db/queries';
 
 const PROJECT_SYSTEM_PROMPT = `You are the project management agent for Patrick's construction assistant. You handle creating and updating projects (job sites).
@@ -23,28 +24,7 @@ For project_create:
 
 For project_update:
 - Identify which project (from resolved entities)
-- Apply changes (status updates, adding details)
-
-Respond in JSON format:
-{
-  "action": "create" | "update",
-  "name": "string (for create)",
-  "project_id": "string (for update)",
-  "client_name": "string or null",
-  "address": "string or null",
-  "project_type": "string or null",
-  "status": "future" | "active" | "on_hold" | "completed" | null
-}`;
-
-interface ProjectAgentResponse {
-  action: 'create' | 'update';
-  name?: string;
-  project_id?: string;
-  client_name?: string | null;
-  address?: string | null;
-  project_type?: string | null;
-  status?: ProjectStatus | null;
-}
+- Apply changes (status updates, adding details)`;
 
 function formatContextForPrompt(context: AgentContext): string {
   const parts: string[] = [
@@ -67,16 +47,15 @@ function formatContextForPrompt(context: AgentContext): string {
  * Handle project-related intents
  */
 export async function handleProjectIntent(context: AgentContext): Promise<ProjectAgentResult> {
-  const messages: ChatMessage[] = [
-    { role: 'system', content: PROJECT_SYSTEM_PROMPT },
-    {
-      role: 'user',
-      content: formatContextForPrompt(context),
-    },
-  ];
-
   try {
-    const response = await callFastModelJSON<ProjectAgentResponse>(messages);
+    const { output: response } = await generateText({
+      model: fastModel,
+      output: Output.object({
+        schema: ProjectAgentResponseSchema,
+      }),
+      system: PROJECT_SYSTEM_PROMPT,
+      prompt: formatContextForPrompt(context),
+    });
 
     if (response.action === 'create') {
       return await handleProjectCreate(response);
@@ -94,7 +73,7 @@ export async function handleProjectIntent(context: AgentContext): Promise<Projec
 }
 
 async function handleProjectCreate(
-  response: ProjectAgentResponse
+  response: ProjectAgentResponseOutput
 ): Promise<ProjectAgentResult> {
   if (!response.name) {
     return {
@@ -109,7 +88,7 @@ async function handleProjectCreate(
     client_name: response.client_name,
     address: response.address,
     project_type: response.project_type,
-    status: response.status || 'future',
+    status: (response.status || 'future') as ProjectStatus,
   });
 
   return {
@@ -120,7 +99,7 @@ async function handleProjectCreate(
 }
 
 async function handleProjectUpdate(
-  response: ProjectAgentResponse,
+  response: ProjectAgentResponseOutput,
   context: AgentContext
 ): Promise<ProjectAgentResult> {
   // Get project ID from response, resolved entities, or context
@@ -159,7 +138,7 @@ async function handleProjectUpdate(
   if (response.client_name !== undefined) updates.client_name = response.client_name;
   if (response.address !== undefined) updates.address = response.address;
   if (response.project_type !== undefined) updates.project_type = response.project_type;
-  if (response.status) updates.status = response.status;
+  if (response.status) updates.status = response.status as ProjectStatus;
 
   const project = await updateProject(projectId, updates);
 

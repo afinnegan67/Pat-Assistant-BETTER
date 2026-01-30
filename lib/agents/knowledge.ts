@@ -1,11 +1,11 @@
+import { generateText } from 'ai';
+import { smartModel } from '@/lib/services/ai-provider';
 import type {
   AgentContext,
   KnowledgeAgentResult,
-  ChatMessage,
   ProjectKnowledge,
 } from '@/lib/utils/types';
-import { callSmartModel } from '@/lib/services/openrouter';
-import { searchKnowledgeByText, generateEmbedding } from '@/lib/db/embeddings';
+import { searchKnowledgeByText } from '@/lib/db/embeddings';
 import { getProjectKnowledge, getProjectById } from '@/lib/db/queries';
 
 const KNOWLEDGE_SYSTEM_PROMPT = `You are the knowledge retrieval agent for Patrick's construction assistant. You answer questions about projects using semantic search over stored knowledge.
@@ -76,21 +76,17 @@ Address: ${project.address || 'Not specified'}`;
     }
 
     // Generate answer using LLM
-    const messages: ChatMessage[] = [
-      { role: 'system', content: KNOWLEDGE_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: `Patrick asked: "${context.userMessage}"
+    const { text: answer } = await generateText({
+      model: smartModel,
+      system: KNOWLEDGE_SYSTEM_PROMPT,
+      prompt: `Patrick asked: "${context.userMessage}"
 ${projectContext}
 
 Relevant knowledge from the database:
 ${formatKnowledgeChunks(knowledgeChunks)}
 
 Based on this information, answer Patrick's question. If the information isn't available, say so directly.`,
-      },
-    ];
-
-    const answer = await callSmartModel(messages);
+    });
 
     // Determine confidence based on knowledge found
     let confidence: 'high' | 'medium' | 'low' = 'low';

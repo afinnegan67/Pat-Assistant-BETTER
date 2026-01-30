@@ -1,5 +1,6 @@
-import type { Task, CalendarEvent, ChatMessage } from '@/lib/utils/types';
-import { callFastModel } from '@/lib/services/openrouter';
+import { generateText } from 'ai';
+import { fastModel } from '@/lib/services/ai-provider';
+import type { Task, CalendarEvent } from '@/lib/utils/types';
 import { getTodaysTasks, getOverdueTasks, getPendingTasks, getActiveProjects } from '@/lib/db/queries';
 import { getTodaysEvents, formatEventsForMessage } from '@/lib/services/calendar';
 
@@ -85,11 +86,10 @@ export async function generateDailyBrief(): Promise<{
       ? formatEventsForMessage(calendarEvents)
       : 'No calendar events today.';
 
-    const messages: ChatMessage[] = [
-      { role: 'system', content: BRIEFING_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: `Today's tasks (${todaysTasks.length}):
+    const { text: content } = await generateText({
+      model: fastModel,
+      system: BRIEFING_SYSTEM_PROMPT,
+      prompt: `Today's tasks (${todaysTasks.length}):
 ${todaysTasksList}
 
 Overdue tasks (${overdueTasks.length}):
@@ -102,10 +102,7 @@ Total open tasks: ${allPendingTasks.length}
 Active projects: ${activeProjects.length}
 
 Generate the morning brief.`,
-      },
-    ];
-
-    const content = await callFastModel(messages);
+    });
 
     // Collect all task IDs mentioned
     const taskIds = [

@@ -1,5 +1,6 @@
-import type { Task, ChatMessage } from '@/lib/utils/types';
-import { callFastModel } from '@/lib/services/openrouter';
+import { generateText } from 'ai';
+import { fastModel } from '@/lib/services/ai-provider';
+import type { Task } from '@/lib/utils/types';
 import { getTasksNeedingReminder, updateTaskReminder, getProjectById } from '@/lib/db/queries';
 
 const REMINDER_SYSTEM_PROMPT = `You generate proactive reminders for Patrick. You check for:
@@ -69,18 +70,14 @@ export async function generateReminders(): Promise<{
       ...other.slice(0, 5).map(t => formatTaskForReminder(t)),
     ].join('\n');
 
-    const messages: ChatMessage[] = [
-      { role: 'system', content: REMINDER_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: `Tasks needing attention (${tasksNeedingReminder.length} total):
+    const { text: reminder } = await generateText({
+      model: fastModel,
+      system: REMINDER_SYSTEM_PROMPT,
+      prompt: `Tasks needing attention (${tasksNeedingReminder.length} total):
 ${tasksList}
 
 Generate a reminder message for Patrick. Be direct and create appropriate urgency.`,
-      },
-    ];
-
-    const reminder = await callFastModel(messages);
+    });
 
     // Update last_reminded_at for all tasks we're reminding about
     const taskIds = tasksNeedingReminder.map(t => t.id);
@@ -124,19 +121,16 @@ export async function generateTaskReminder(task: Task): Promise<string> {
     }
   }
 
-  const messages: ChatMessage[] = [
-    { role: 'system', content: REMINDER_SYSTEM_PROMPT },
-    {
-      role: 'user',
-      content: `Task: "${task.description}"${projectContext}
+  try {
+    const { text: reminder } = await generateText({
+      model: fastModel,
+      system: REMINDER_SYSTEM_PROMPT,
+      prompt: `Task: "${task.description}"${projectContext}
 Priority: ${task.priority}${overdueContext}
 
 Generate a brief, direct reminder for this specific task.`,
-    },
-  ];
+    });
 
-  try {
-    const reminder = await callFastModel(messages);
     return reminder.trim();
   } catch (error) {
     console.error('Task reminder error:', error);

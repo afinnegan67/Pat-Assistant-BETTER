@@ -57,7 +57,7 @@ async function processMessage(message: TelegramMessage): Promise<void> {
   // Handle voice messages
   if (message.voice) {
     try {
-      await sendTypingAction(chatId);
+      sendTypingAction(chatId).catch(() => {});
 
       // Download and transcribe
       const audioBuffer = await downloadVoiceNote(message.voice.file_id);
@@ -77,8 +77,8 @@ async function processMessage(message: TelegramMessage): Promise<void> {
   }
 
   try {
-    // Show typing indicator
-    await sendTypingAction(chatId);
+    // Show typing indicator (non-blocking, don't let it fail the request)
+    sendTypingAction(chatId).catch(() => {});
 
     // Get or create today's conversation
     const conversationId = await getOrCreateConversation();
@@ -95,9 +95,9 @@ async function processMessage(message: TelegramMessage): Promise<void> {
     // Route the message
     const routerResult = await routeMessage(messageText, todaysMessages, activeContext);
 
-    // If requires lookup, send typing again
+    // If requires lookup, send typing again (non-blocking)
     if (routerResult.requires_lookup) {
-      await sendTypingAction(chatId);
+      sendTypingAction(chatId).catch(() => {});
     }
 
     // Resolve entities from router result
@@ -254,13 +254,14 @@ export async function POST(request: NextRequest) {
 
     // Handle message updates
     if (update.message) {
-      // Process in background to avoid timeout
-      processMessage(update.message).catch(error => {
-        console.error('Background message processing error:', error);
-      });
+      // Wait for processing to complete (Vercel kills background tasks after response)
+      try {
+        await processMessage(update.message);
+      } catch (error) {
+        console.error('Message processing error:', error);
+      }
     }
 
-    // Telegram expects 200 OK quickly
     return NextResponse.json({ ok: true });
 
   } catch (error) {

@@ -1,14 +1,14 @@
+import { generateText } from 'ai';
+import { smartModel } from '@/lib/services/ai-provider';
 import type {
   Intent,
   Message,
   TaskAgentResult,
   ProjectAgentResult,
   KnowledgeAgentResult,
-  ChatMessage,
   Task,
   CalendarEvent,
 } from '@/lib/utils/types';
-import { callSmartModel } from '@/lib/services/openrouter';
 
 const RESPONSE_SYSTEM_PROMPT = `You are the response generator for Patrick's construction assistant. You take structured results from specialist agents and generate natural language responses.
 
@@ -21,10 +21,10 @@ CRITICAL RULES:
 6. Never use phrases like "Great!", "Absolutely!", "I'd be happy to", "Of course!", "Perfect!", "Awesome!", "Certainly!"
 
 VOICE EXAMPLES:
-- User marks task complete → "Marked the Chen change order as complete. Anything else done?"
-- User asks schedule → "Today you have: [list]. Plus 3 overdue tasks from last week."
-- User creates task → "Added: Send change order to Chen client. Deadline set for Friday."
-- Error occurred → "Your nephew Aidan failed to build me correctly. Blame him not me."
+- User marks task complete -> "Marked the Chen change order as complete. Anything else done?"
+- User asks schedule -> "Today you have: [list]. Plus 3 overdue tasks from last week."
+- User creates task -> "Added: Send change order to Chen client. Deadline set for Friday."
+- Error occurred -> "Your nephew Aidan failed to build me correctly. Blame him not me."
 
 When generating responses:
 - If showing a list, keep it scannable but not bullet-heavy
@@ -146,11 +146,11 @@ function buildResultSummary(context: ResponseContext): string {
 export async function generateResponse(context: ResponseContext): Promise<string> {
   const resultSummary = buildResultSummary(context);
 
-  const messages: ChatMessage[] = [
-    { role: 'system', content: RESPONSE_SYSTEM_PROMPT },
-    {
-      role: 'user',
-      content: `Patrick said: "${context.userMessage}"
+  try {
+    const { text } = await generateText({
+      model: smartModel,
+      system: RESPONSE_SYSTEM_PROMPT,
+      prompt: `Patrick said: "${context.userMessage}"
 
 Intent classified as: ${context.intent}
 
@@ -158,12 +158,9 @@ Result from specialist agent:
 ${resultSummary}
 
 Generate a natural, blunt response for Patrick. Remember: no fluff, no apologies, no corporate speak.`,
-    },
-  ];
+    });
 
-  try {
-    const response = await callSmartModel(messages);
-    return response.trim();
+    return text.trim();
   } catch (error) {
     console.error('Response generation error:', error);
     return 'Your nephew Aidan failed to build me correctly. Blame him not me.';
@@ -193,19 +190,16 @@ export async function generateGeneralChatResponse(
   }
 
   // For anything else, use the LLM
-  const messages: ChatMessage[] = [
-    { role: 'system', content: RESPONSE_SYSTEM_PROMPT },
-    {
-      role: 'user',
-      content: `Patrick said: "${userMessage}"
+  try {
+    const { text } = await generateText({
+      model: smartModel,
+      system: RESPONSE_SYSTEM_PROMPT,
+      prompt: `Patrick said: "${userMessage}"
 
 This is general chat - not a task, project, or query request. Generate a brief, natural response. Don't be robotic but don't be overly friendly either.`,
-    },
-  ];
+    });
 
-  try {
-    const response = await callSmartModel(messages);
-    return response.trim();
+    return text.trim();
   } catch (error) {
     console.error('Response generation error:', error);
     return 'Your nephew Aidan failed to build me correctly. Blame him not me.';

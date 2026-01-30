@@ -20,7 +20,7 @@ async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
 
   const formData = new FormData();
-  formData.append('audio', new Blob([audioBuffer]), 'voice.ogg');
+  formData.append('audio', new Blob([new Uint8Array(audioBuffer)]), 'voice.ogg');
   formData.append('model_id', 'scribe_v1');
 
   const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {

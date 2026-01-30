@@ -10,7 +10,7 @@ const CONFIRMATION_THRESHOLD_SECONDS = 30 * 60;
 
 async function transcribeAudio(audioBuffer: Buffer): Promise<{ text: string; duration: number }> {
   const formData = new FormData();
-  formData.append('audio', new Blob([new Uint8Array(audioBuffer)]), 'recording.webm');
+  formData.append('file', new Blob([new Uint8Array(audioBuffer)]), 'recording.webm');
   formData.append('model_id', 'scribe_v1');
 
   const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {

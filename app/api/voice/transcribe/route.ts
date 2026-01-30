@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { saveVoiceTranscript, updateTranscriptProcessed } from '@/lib/db/queries';
 import { processTranscript, commitTranscriptData, generateTranscriptSummary } from '@/lib/agents/transcript';
 import { sendMessageToPatrick } from '@/lib/services/telegram';
+import FormData from 'form-data';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
 
@@ -9,21 +10,24 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
 const CONFIRMATION_THRESHOLD_SECONDS = 30 * 60;
 
 async function transcribeAudio(audioBuffer: Buffer): Promise<{ text: string; duration: number }> {
-  // Convert Buffer to Uint8Array for Blob compatibility, use filename as third arg to append
-  const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/webm' });
-
+  // Use form-data package for proper multipart handling in serverless environments
   const formData = new FormData();
-  formData.append('file', audioBlob, 'recording.webm');
+  formData.append('file', audioBuffer, {
+    filename: 'recording.webm',
+    contentType: 'audio/webm',
+  });
   formData.append('model_id', 'scribe_v1');
 
-  console.log('Sending to ElevenLabs, blob size:', audioBlob.size, 'type:', audioBlob.type);
+  console.log('Sending to ElevenLabs, buffer size:', audioBuffer.length);
 
   const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
     method: 'POST',
     headers: {
       'xi-api-key': ELEVENLABS_API_KEY,
+      ...formData.getHeaders(),
     },
-    body: formData,
+    // @ts-expect-error - form-data Buffer is compatible with fetch body in Node.js
+    body: formData.getBuffer(),
   });
 
   if (!response.ok) {

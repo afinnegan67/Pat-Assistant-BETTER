@@ -9,15 +9,14 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
 const CONFIRMATION_THRESHOLD_SECONDS = 30 * 60;
 
 async function transcribeAudio(audioBuffer: Buffer): Promise<{ text: string; duration: number }> {
-  // Create a File object with explicit type - works better in Node.js serverless
-  const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/webm' });
-  const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
+  // Use Blob directly with filename as third arg - File constructor doesn't work in serverless
+  const audioBlob = new Blob([audioBuffer], { type: 'audio/webm' });
 
   const formData = new FormData();
-  formData.append('file', audioFile);
+  formData.append('file', audioBlob, 'recording.webm');
   formData.append('model_id', 'scribe_v1');
 
-  console.log('Sending to ElevenLabs, file size:', audioFile.size, 'type:', audioFile.type);
+  console.log('Sending to ElevenLabs, blob size:', audioBlob.size, 'type:', audioBlob.type);
 
   const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
     method: 'POST',

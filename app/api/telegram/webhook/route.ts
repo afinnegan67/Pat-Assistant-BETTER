@@ -221,16 +221,36 @@ async function processMessage(message: TelegramMessage): Promise<void> {
 
 export async function POST(request: NextRequest) {
   try {
+    // Debug: Log all headers
+    console.log('=== WEBHOOK DEBUG START ===');
+    console.log('Request URL:', request.url);
+    console.log('Request method:', request.method);
+
+    const allHeaders: Record<string, string> = {};
+    request.headers.forEach((value, key) => {
+      allHeaders[key] = key.toLowerCase().includes('secret') ? `${value.substring(0, 10)}...` : value;
+    });
+    console.log('All headers:', JSON.stringify(allHeaders, null, 2));
+
     // Verify webhook secret
     const secretHeader = request.headers.get('x-telegram-bot-api-secret-token');
-    console.log('Received secret:', secretHeader);
-    console.log('Expected secret:', TELEGRAM_WEBHOOK_SECRET);
-    console.log('Match:', secretHeader === TELEGRAM_WEBHOOK_SECRET);
+    console.log('--- Secret Validation ---');
+    console.log('Secret header present:', secretHeader !== null);
+    console.log('Secret header value:', secretHeader ? `${secretHeader.substring(0, 10)}...(length: ${secretHeader.length})` : 'NULL');
+    console.log('Expected secret set:', !!TELEGRAM_WEBHOOK_SECRET);
+    console.log('Expected secret value:', TELEGRAM_WEBHOOK_SECRET ? `${TELEGRAM_WEBHOOK_SECRET.substring(0, 10)}...(length: ${TELEGRAM_WEBHOOK_SECRET.length})` : 'NOT SET');
+    console.log('Exact match:', secretHeader === TELEGRAM_WEBHOOK_SECRET);
+    console.log('Trimmed match:', secretHeader?.trim() === TELEGRAM_WEBHOOK_SECRET?.trim());
+    console.log('=== WEBHOOK DEBUG END ===');
+
     if (!verifyWebhookSecret(secretHeader, TELEGRAM_WEBHOOK_SECRET)) {
+      console.log('AUTH FAILED - Returning 401');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    console.log('AUTH SUCCESS - Processing update');
     const update: TelegramUpdate = await request.json();
+    console.log('Update received:', JSON.stringify(update, null, 2));
 
     // Handle message updates
     if (update.message) {
@@ -249,7 +269,17 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET endpoint for webhook verification
+// GET endpoint for webhook verification and debug
 export async function GET() {
-  return NextResponse.json({ status: 'Webhook active' });
+  return NextResponse.json({
+    status: 'Webhook active',
+    debug: {
+      webhookSecretConfigured: !!TELEGRAM_WEBHOOK_SECRET,
+      webhookSecretLength: TELEGRAM_WEBHOOK_SECRET?.length || 0,
+      webhookSecretPreview: TELEGRAM_WEBHOOK_SECRET ? `${TELEGRAM_WEBHOOK_SECRET.substring(0, 5)}...` : 'NOT SET',
+      patrickIdConfigured: !!PATRICK_TELEGRAM_ID,
+      aidanIdConfigured: !!AIDAN_TELEGRAM_ID,
+      allowedUsers: ALLOWED_USER_IDS.length,
+    }
+  });
 }

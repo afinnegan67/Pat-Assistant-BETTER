@@ -11,19 +11,26 @@ interface TelegramApiResponse {
 async function callTelegramApi(
   method: string,
   body?: Record<string, unknown>,
-  retries: number = 3
+  retries: number = 5
 ): Promise<unknown> {
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
+      // Add timeout using AbortController
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
       const response = await fetch(`${TELEGRAM_API_BASE}/${method}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       const data: TelegramApiResponse = await response.json();
 
@@ -34,10 +41,13 @@ async function callTelegramApi(
       return data.result;
     } catch (error) {
       lastError = error as Error;
-      console.error(`Telegram API attempt ${attempt + 1} failed:`, error);
+      console.error(`Telegram API attempt ${attempt + 1}/${retries} failed:`, error);
 
       if (attempt < retries - 1) {
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+        // Exponential backoff: 1s, 2s, 4s, 8s
+        const delay = Math.pow(2, attempt) * 1000;
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }

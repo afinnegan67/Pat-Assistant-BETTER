@@ -14,6 +14,8 @@ import { getTodaysEvents } from '@/lib/services/calendar';
 
 const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET!;
 const PATRICK_TELEGRAM_ID = process.env.PATRICK_TELEGRAM_ID!;
+const AIDAN_TELEGRAM_ID = process.env.AIDAN_TELEGRAM_ID!;
+const ALLOWED_USER_IDS = [PATRICK_TELEGRAM_ID, AIDAN_TELEGRAM_ID];
 
 // Eleven Labs transcription
 async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
@@ -44,9 +46,9 @@ async function processMessage(message: TelegramMessage): Promise<void> {
   const chatId = message.chat.id;
   const userId = message.from.id;
 
-  // Only respond to Patrick
-  if (userId.toString() !== PATRICK_TELEGRAM_ID) {
-    await sendMessage(chatId, "I only talk to Patrick. If you're not Patrick, blame Aidan.");
+  // Only respond to Patrick and Aidan
+  if (!ALLOWED_USER_IDS.includes(userId.toString())) {
+    await sendMessage(chatId, "I only talk to Patrick and Aidan. Sorry!");
     return;
   }
 

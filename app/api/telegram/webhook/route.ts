@@ -21,8 +21,12 @@ const ALLOWED_USER_IDS = [PATRICK_TELEGRAM_ID, AIDAN_TELEGRAM_ID];
 async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
 
+  // Create a File object with explicit type - works better in Node.js serverless
+  const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/ogg' });
+  const audioFile = new File([audioBlob], 'voice.ogg', { type: 'audio/ogg' });
+
   const formData = new FormData();
-  formData.append('file', new Blob([new Uint8Array(audioBuffer)]), 'voice.ogg');
+  formData.append('file', audioFile);
   formData.append('model_id', 'scribe_v1');
 
   const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {

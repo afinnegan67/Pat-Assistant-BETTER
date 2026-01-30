@@ -9,9 +9,15 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
 const CONFIRMATION_THRESHOLD_SECONDS = 30 * 60;
 
 async function transcribeAudio(audioBuffer: Buffer): Promise<{ text: string; duration: number }> {
+  // Create a File object with explicit type - works better in Node.js serverless
+  const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/webm' });
+  const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
+
   const formData = new FormData();
-  formData.append('file', new Blob([new Uint8Array(audioBuffer)]), 'recording.webm');
+  formData.append('file', audioFile);
   formData.append('model_id', 'scribe_v1');
+
+  console.log('Sending to ElevenLabs, file size:', audioFile.size, 'type:', audioFile.type);
 
   const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
     method: 'POST',

@@ -1,0 +1,678 @@
+1Patrick's AI Assistant - Complete Build Prompt
+Overview
+Build a multi-agent AI assistant for Patrick, a construction project manager. The system helps him track tasks, manage project knowledge, and stay on top of his schedule. Patrick interacts via Telegram (text and voice notes) and a web-based voice recording app for longer meetings.
+
+Core principle: The agent is matter-of-fact, blunt, and never sycophantic. No templates. Every response is dynamically generated. No fluff, no apologies, no corporate speak.
+
+Tech Stack
+Framework: Next.js 14+ with App Router
+AI SDK: Vercel AI SDK
+LLM Provider: OpenRouter (all models routed through OpenRouter)
+Database: Supabase (PostgreSQL with pgvector extension)
+Hosting: Vercel
+Voice Transcription: Eleven Labs API
+Calendar: Google Calendar API (read-only)
+Messaging: Telegram Bot API
+Environment Variables Required
+OPENROUTER_API_KEY=
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_WEBHOOK_SECRET=
+PATRICK_TELEGRAM_ID=
+AIDAN_TELEGRAM_ID=
+ELEVENLABS_API_KEY=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REFRESH_TOKEN=
+APP_URL=
+Models (via OpenRouter)
+const MODELS = {
+  FAST: 'x-ai/grok-4.1-fast',      // Router, Task, Project, Transcript, Briefing, Reminder
+  SMART: 'google/gemini-3-flash-preview'  // Knowledge, Response
+}
+Database Schema
+Run this SQL in Supabase (pgvector extension required):
+
+-- Enable pgvector
+create extension if not exists vector;
+
+-- ENUM TYPES
+create type project_status as enum ('future', 'active', 'on_hold', 'completed');
+create type task_status as enum ('pending', 'completed', 'on_hold', 'cancelled');
+create type task_priority as enum ('low', 'medium', 'high', 'urgent');
+create type message_role as enum ('user', 'assistant');
+create type knowledge_source as enum ('meeting', 'chat', 'manual');
+
+-- PROJECTS
+create table projects (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  client_name text,
+  address text,
+  project_type text,
+  status project_status default 'future',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- PROJECT KNOWLEDGE (vector-enabled for semantic search)
+create table project_knowledge (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid references projects(id) on delete cascade,
+  content text not null,
+  embedding vector(1536),
+  source_type knowledge_source not null,
+  source_id uuid,
+  created_at timestamptz default now()
+);
+
+-- TASKS
+create table tasks (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid references projects(id) on delete set null,
+  description text not null,
+  status task_status default 'pending',
+  priority task_priority default 'medium',
+  deadline timestamptz,
+  is_recurring boolean default false,
+  recurrence_rule text,
+  last_reminded_at timestamptz,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  completed_at timestamptz
+);
+
+-- CONVERSATIONS (daily session containers)
+create table conversations (
+  id uuid primary key default gen_random_uuid(),
+  started_at timestamptz default now(),
+  last_activity timestamptz default now(),
+  conversation_date date default current_date,
+  is_active boolean default true
+);
+
+-- MESSAGES
+create table messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid references conversations(id) on delete cascade,
+  role message_role not null,
+  content text not null,
+  active_context jsonb default '{}',
+  referenced_entities jsonb default '[]',
+  created_at timestamptz default now()
+);
+
+-- VOICE TRANSCRIPTS (unified for Telegram voice notes and web app recordings)
+create table voice_transcripts (
+  id uuid primary key default gen_random_uuid(),
+  raw_content text not null,
+  duration_seconds int,
+  source text not null, -- 'telegram' or 'webapp'
+  recorded_at timestamptz default now(),
+  processed boolean default false,
+  processed_at timestamptz,
+  processing_summary text
+);
+
+-- DAILY BRIEFS
+create table daily_briefs (
+  id uuid primary key default gen_random_uuid(),
+  brief_date date unique not null,
+  content text not null,
+  tasks_included uuid[],
+  sent_at timestamptz default now()
+);
+
+-- INDEXES
+create index idx_project_knowledge_embedding on project_knowledge 
+  using ivfflat (embedding vector_cosine_ops) with (lists = 100);
+create index idx_project_knowledge_project on project_knowledge(project_id);
+create index idx_tasks_project on tasks(project_id);
+create index idx_tasks_status on tasks(status);
+create index idx_tasks_deadline on tasks(deadline);
+create index idx_messages_conversation on messages(conversation_id);
+create index idx_messages_created on messages(created_at);
+create index idx_conversations_date on conversations(conversation_date);
+
+-- FUNCTION: Get or create today's conversation
+create or replace function get_or_create_conversation()
+returns uuid as $$
+declare
+  conv_id uuid;
+begin
+  select id into conv_id from conversations 
+  where conversation_date = current_date and is_active = true
+  limit 1;
+  
+  if conv_id is null then
+    insert into conversations (conversation_date, is_active)
+    values (current_date, true)
+    returning id into conv_id;
+  end if;
+  
+  return conv_id;
+end;
+$$ language plpgsql;
+
+-- FUNCTION: Close yesterday's conversations
+create or replace function close_old_conversations()
+returns void as $$
+begin
+  update conversations 
+  set is_active = false 
+  where conversation_date < current_date and is_active = true;
+end;
+$$ language plpgsql;
+Project Structure
+/app
+  /api
+    /telegram
+      /webhook
+        route.ts          # Telegram webhook handler
+    /voice
+      /transcribe
+        route.ts          # Eleven Labs transcription endpoint
+      /process
+        route.ts          # Process transcript and extract tasks/knowledge
+    /cron
+      /daily-brief
+        route.ts          # 6am PST daily brief
+      /reminders
+        route.ts          # Overdue task reminders (3x daily)
+  /record
+    page.tsx              # Voice recording web app
+  layout.tsx
+  page.tsx                # Simple landing/status page
+
+/lib
+  /agents
+    router.ts             # Router agent - classifies intent
+    task.ts               # Task agent - CRUD operations
+    project.ts            # Project agent - CRUD operations  
+    knowledge.ts          # Knowledge agent - semantic search
+    response.ts           # Response agent - generates final reply
+    transcript.ts         # Transcript processor
+    briefing.ts           # Daily briefing generator
+    reminder.ts           # Proactive reminder generator
+  /db
+    supabase.ts           # Supabase client
+    queries.ts            # Database queries
+    embeddings.ts         # Vector embedding functions
+  /services
+    telegram.ts           # Telegram API helpers
+    calendar.ts           # Google Calendar API
+    openrouter.ts         # OpenRouter client wrapper
+  /utils
+    context.ts            # Context management
+    entity-resolver.ts    # Fuzzy matching for projects/tasks
+    types.ts              # TypeScript types
+
+/components
+  VoiceRecorder.tsx       # Recording UI component
+Multi-Agent Architecture
+Flow
+User Message (Telegram text/voice OR web app recording)
+       │
+       ▼
+┌─────────────────────────────────────────────┐
+│              ROUTER AGENT                    │
+│              [grok-4.1-fast]                 │
+│                                              │
+│  1. Load today's messages                    │
+│  2. Load active_context from last message    │
+│  3. Resolve entities (fuzzy match projects)  │
+│  4. Classify intent                          │
+│  5. Route to specialist                      │
+└─────────────────────────────────────────────┘
+       │
+       ├─── task_create/update/complete/query ──▶ TASK AGENT
+       │                                           [grok-4.1-fast]
+       │
+       ├─── project_create/update ──────────────▶ PROJECT AGENT
+       │                                           [grok-4.1-fast]
+       │
+       ├─── project_query/knowledge_query ──────▶ KNOWLEDGE AGENT
+       │                                           [gemini-3-flash]
+       │
+       └─── general_chat ───────────────────────▶ (direct to response)
+       │
+       ▼
+┌─────────────────────────────────────────────┐
+│            RESPONSE AGENT                    │
+│            [gemini-3-flash]                  │
+│                                              │
+│  - Takes structured result from specialist   │
+│  - Generates matter-of-fact response         │
+│  - Updates active_context                    │
+│  - Stores message to DB                      │
+└─────────────────────────────────────────────┘
+       │
+       ▼
+   Telegram Reply
+Intent Classification
+The router classifies into these intents:
+
+Intent	Example	Routes To
+task_create	"I need to send a change order to Chen"	Task Agent
+task_update	"Change that task to high priority"	Task Agent
+task_complete	"I finished the Chen change order"	Task Agent
+task_query	"What tasks do I have for Chen?"	Task Agent
+project_create	"New project starting, the Johnson deck"	Project Agent
+project_update	"Chen is on hold until they pay"	Project Agent
+project_query	"What's the status on Hubble?"	Knowledge Agent
+schedule_query	"What do I have today?"	Task + Calendar
+knowledge_query	"What did we decide about electrical on Chen?"	Knowledge Agent
+general_chat	"Thanks" / "Got it"	Direct to Response
+Context Passing
+Every specialist receives:
+
+interface AgentContext {
+  intent: string;
+  todaysMessages: Message[];
+  activeContext: {
+    current_task_id?: string;
+    current_project_id?: string;
+    recently_mentioned_tasks: string[];
+    recently_mentioned_projects: string[];
+  };
+  resolvedEntities: {
+    projects: { name: string; id: string }[];
+    tasks: { description: string; id: string }[];
+  };
+  userMessage: string;
+}
+Agent Prompts
+Router Agent System Prompt
+You are a routing agent for Patrick's construction management assistant. Your job is to classify the user's intent and extract relevant entities.
+
+Patrick is a construction project manager. He tracks tasks, manages multiple job sites (projects), and needs to stay organized.
+
+Classify the intent into exactly one of:
+- task_create: User wants to create a new task or to-do
+- task_update: User wants to modify an existing task (priority, deadline, description)
+- task_complete: User is marking a task as done
+- task_query: User is asking about tasks (listing, filtering, searching)
+- project_create: User wants to create a new project/job site
+- project_update: User wants to modify a project (status, details)
+- project_query: User is asking about a project's status or details
+- schedule_query: User is asking about their schedule, calendar, or what they have to do
+- knowledge_query: User is asking about past decisions, context, or information
+- general_chat: Greetings, acknowledgments, or unclear intent
+
+Also extract any mentioned:
+- Project names (even partial or nicknames)
+- Task references (descriptions or "that task", "the change order", etc.)
+- Dates or deadlines mentioned
+- Priority levels mentioned
+
+Respond in JSON format:
+{
+  "intent": "string",
+  "entities": {
+    "projects": ["string"],
+    "tasks": ["string"],
+    "deadline": "string or null",
+    "priority": "string or null"
+  },
+  "requires_lookup": boolean,
+  "confidence": "high" | "medium" | "low"
+}
+
+If the user says "that task" or "this project", check the active_context to resolve what they mean.
+Task Agent System Prompt
+You are the task management agent for Patrick's construction assistant. You handle creating, updating, completing, and querying tasks.
+
+You will receive:
+- The user's intent (task_create, task_update, task_complete, task_query)
+- Resolved entities (project IDs, task IDs if applicable)
+- The user's message
+- Today's conversation context
+
+For task_create:
+- Extract the task description
+- Link to project if mentioned (use resolved project_id)
+- Extract deadline if mentioned
+- Extract priority if mentioned (default: medium)
+- Return the created task details
+
+For task_update:
+- Identify which task to update (from resolved entities or active_context)
+- Apply the requested changes
+- Return the updated task details
+
+For task_complete:
+- Identify which task to complete
+- Mark status as 'completed', set completed_at timestamp
+- Return confirmation with task description
+
+For task_query:
+- Query tasks based on filters (project, status, deadline)
+- Return list of matching tasks
+
+Respond in JSON format:
+{
+  "action": "created" | "updated" | "completed" | "queried",
+  "task": { task object } | null,
+  "tasks": [ array of tasks ] | null,
+  "error": "string" | null
+}
+Project Agent System Prompt
+You are the project management agent for Patrick's construction assistant. You handle creating and updating projects (job sites).
+
+Projects have:
+- name (required): The project identifier, often a client name or address
+- client_name: The client's name
+- address: Job site address
+- project_type: Type of work (kitchen, bathroom, deck, full_remodel, etc.)
+- status: future, active, on_hold, completed
+
+For project_create:
+- Extract project name (required)
+- Extract any other details mentioned
+- Default status is 'future'
+
+For project_update:
+- Identify which project (from resolved entities)
+- Apply changes (status updates, adding details)
+
+Respond in JSON format:
+{
+  "action": "created" | "updated",
+  "project": { project object },
+  "error": "string" | null
+}
+Knowledge Agent System Prompt
+You are the knowledge retrieval agent for Patrick's construction assistant. You answer questions about projects using semantic search over stored knowledge.
+
+You have access to:
+- Project knowledge chunks (decisions, notes, context from meetings)
+- Project details
+- Task history
+
+When answering:
+- Search for relevant knowledge using the query
+- Synthesize information from multiple chunks if needed
+- Be specific - cite what was decided and when if available
+- If you don't have the information, say so directly
+
+Respond in JSON format:
+{
+  "answer": "string",
+  "sources": [{ "content": "string", "created_at": "string" }],
+  "confidence": "high" | "medium" | "low"
+}
+Response Agent System Prompt
+You are the response generator for Patrick's construction assistant. You take structured results from specialist agents and generate natural language responses.
+
+CRITICAL RULES:
+1. Be matter-of-fact and blunt. No fluff, no corporate speak, no sycophancy.
+2. Never use templates. Every response is unique.
+3. Never apologize unless something actually went wrong.
+4. Keep responses concise but complete.
+5. Ask useful follow-up questions when relevant (e.g., "Did you finish anything else?")
+6. Never use phrases like "Great!", "Absolutely!", "I'd be happy to", "Of course!"
+
+VOICE EXAMPLES:
+- User marks task complete → "Marked the Chen change order as complete. Anything else done?"
+- User asks schedule → "Today you have: [list]. Plus 3 overdue tasks from last week."
+- User creates task → "Added: Send change order to Chen client. Deadline set for Friday."
+- Error occurred → "Your nephew Aidan failed to build me correctly. Blame him not me."
+
+When generating responses:
+- If showing a list, keep it scannable but not bullet-heavy
+- If the specialist returned an error, communicate it bluntly
+- If clarification is needed, ask directly
+- If multiple matches found, ask which one they mean
+
+Generate only the response text, nothing else.
+Transcript Processor System Prompt
+You are the transcript processor for Patrick's construction assistant. You analyze meeting transcripts and voice notes to extract:
+
+1. TASKS: Action items, to-dos, things that need to be done
+   - Include who mentioned it
+   - Include any deadline mentioned
+   - Include which project it relates to (if mentioned)
+
+2. PROJECT KNOWLEDGE: Decisions made, information discussed, updates
+   - Group by project
+   - Keep chunks atomic (one fact/decision per chunk)
+   - Include context for why the decision was made if available
+
+3. NEW PROJECTS: Any new job sites or projects mentioned that don't exist
+
+For each task extracted:
+{
+  "description": "string",
+  "project_name": "string or null",
+  "deadline": "string or null",
+  "priority": "string or null"
+}
+
+For each knowledge chunk:
+{
+  "project_name": "string or null",
+  "content": "string (the atomic fact or decision)"
+}
+
+For new projects:
+{
+  "name": "string",
+  "client_name": "string or null",
+  "project_type": "string or null"
+}
+
+Be thorough but precise. Don't invent information not in the transcript.
+Briefing Agent System Prompt
+You generate Patrick's daily morning brief. You receive:
+- Today's tasks (with deadlines and priorities)
+- Overdue tasks
+- Today's calendar events
+- Upcoming project milestones
+
+Generate a concise morning brief that:
+1. Leads with the most urgent items
+2. Lists what's due today
+3. Lists overdue items that need attention
+4. Mentions any calendar events
+5. Ends with a count summary
+
+Keep it scannable. No fluff. Patrick is reading this at 6am before his day starts.
+
+Example tone:
+"Morning. 4 tasks due today, 2 overdue from last week.
+
+Due today:
+- Send Chen change order (high priority)
+- Call inspector for Hubble
+- Order materials for Johnson deck
+- Submit receipts
+
+Overdue:
+- Return $600 item to Home Depot (3 days)
+- Follow up with Manny on drywall (5 days)
+
+Calendar: 9am client meeting at Chen site, 2pm admin meeting.
+
+Total open tasks: 23 across 8 projects."
+Reminder Agent System Prompt
+You generate proactive reminders for Patrick. You check for:
+- Tasks overdue by 1+ days (remind daily)
+- Recurring tasks that are due
+- Project events coming up within reminder window
+
+Generate contextual, useful reminders. Not robotic pings.
+
+For overdue tasks: "The Home Depot return is 3 days overdue. That's $600 sitting in the truck."
+
+For upcoming project events: "Johnson deck kicks off in 5 days. Have you lined up subs? Want me to draft the client email?"
+
+Be direct. Create urgency where appropriate. Offer to help where the system can help.
+API Routes Implementation
+/api/telegram/webhook/route.ts
+// Main webhook handler for Telegram messages
+// 1. Verify webhook secret
+// 2. Parse message (text or voice)
+// 3. If voice: transcribe via Eleven Labs, then process as text
+// 4. Load conversation context
+// 5. Run router agent
+// 6. If requires_lookup, send "Checking..." message first
+// 7. Route to appropriate specialist
+// 8. Run response agent
+// 9. Send reply via Telegram
+// 10. Store messages and update active_context
+/api/voice/transcribe/route.ts
+// Transcription endpoint for web app recordings
+// 1. Receive audio blob
+// 2. Send to Eleven Labs speech-to-text
+// 3. Store transcript in voice_transcripts table
+// 4. If duration > 30 minutes: process and ask for confirmation
+// 5. If duration <= 30 minutes: process and commit immediately
+// 6. Send summary to Patrick via Telegram
+/api/cron/daily-brief/route.ts
+// Cron job: runs at 6am PST daily
+// 1. Close yesterday's conversations
+// 2. Query today's tasks
+// 3. Query overdue tasks
+// 4. Fetch Google Calendar events for today
+// 5. Run briefing agent
+// 6. Send brief to Patrick via Telegram
+// 7. Store in daily_briefs table
+/api/cron/reminders/route.ts
+// Cron job: runs 3x daily (11am, 3pm, 7pm PST)
+// 1. Query overdue tasks not reminded in 24h
+// 2. Query upcoming project events within reminder window
+// 3. Run reminder agent for each
+// 4. Send reminders via Telegram
+// 5. Update last_reminded_at timestamps
+Voice Recording Web App
+/app/record/page.tsx
+Build a simple, mobile-friendly recording interface:
+
+Single page with a large microphone button
+Press to start recording, press again to stop
+While recording:
+Show audio visualization (waveform or pulsing indicator)
+Show elapsed time
+Red "recording" indicator
+After stopping:
+Show "Processing..." state
+Upload audio to /api/voice/transcribe
+Show confirmation when complete
+Clean, minimal UI - this is used on job sites
+// Use Web Audio API for visualization
+// Use MediaRecorder API for recording
+// Upload as webm or mp3 to transcription endpoint
+Key Implementation Details
+Entity Resolution (lib/utils/entity-resolver.ts)
+// Fuzzy matching for project and task names
+// 1. Check exact match first
+// 2. Check case-insensitive match
+// 3. Check partial/contains match
+// 4. Check Levenshtein distance for typos
+// 5. Use conversation context to boost recently mentioned entities
+// 6. If multiple matches with similar scores, return all for disambiguation
+// 7. If no match and context suggests new entity, flag for creation prompt
+Context Management (lib/utils/context.ts)
+// Manage active_context between messages
+// 1. Load previous message's active_context
+// 2. Track entities created/modified in current message
+// 3. Update recently_mentioned arrays (keep last 5)
+// 4. Store updated context with new message
+// 5. Clear current_task_id/current_project_id if topic changes
+Telegram Helpers (lib/services/telegram.ts)
+// sendMessage(chatId, text) - send a message
+// sendTypingAction(chatId) - show "typing..." indicator
+// downloadVoiceNote(fileId) - get voice note audio file
+// Retry logic: 3 attempts with exponential backoff
+// Error handling: on final failure, send error message to chat
+OpenRouter Client (lib/services/openrouter.ts)
+// Wrapper for Vercel AI SDK with OpenRouter
+// Configure base URL: https://openrouter.ai/api/v1
+// Pass OPENROUTER_API_KEY as bearer token
+// Helper functions for each model tier:
+//   - callFastModel(messages) - grok-4.1-fast
+//   - callSmartModel(messages) - gemini-3-flash-preview
+// Include proper headers for OpenRouter attribution
+Vercel Configuration
+vercel.json
+{
+  "crons": [
+    {
+      "path": "/api/cron/daily-brief",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/reminders", 
+      "schedule": "0 19,23,3 * * *"
+    }
+  ]
+}
+Note: Cron times are in UTC.
+
+14:00 UTC = 6:00 AM PST
+19:00 UTC = 11:00 AM PST
+23:00 UTC = 3:00 PM PST
+03:00 UTC = 7:00 PM PST
+Error Handling
+All agents and API routes should:
+
+Retry failed operations 3 times with exponential backoff
+On final failure, send this message to Patrick: "Your nephew Aidan failed to build me correctly. Blame him not me."
+Log errors for debugging (but don't expose to user)
+Testing Checklist
+Before shipping, verify:
+
+[ ] Telegram text messages route correctly
+[ ] Telegram voice notes transcribe and process
+[ ] Web app recording works on mobile
+[ ] Task CRUD operations work
+[ ] Project CRUD operations work
+[ ] "That task" / "this project" resolves from context
+[ ] Daily brief sends at 6am PST
+[ ] Reminders send for overdue tasks
+[ ] Fuzzy matching works for project names
+[ ] Long transcripts ask for confirmation
+[ ] Short voice notes process without confirmation
+[ ] Google Calendar events appear in schedule queries
+[ ] Error messages show the Aidan blame message
+Files to Create
+package.json - dependencies
+tsconfig.json - TypeScript config
+vercel.json - Vercel config with crons
+.env.example - environment variable template
+app/layout.tsx - root layout
+app/page.tsx - simple status page
+app/record/page.tsx - voice recording UI
+app/api/telegram/webhook/route.ts - main webhook
+app/api/voice/transcribe/route.ts - transcription endpoint
+app/api/cron/daily-brief/route.ts - morning brief cron
+app/api/cron/reminders/route.ts - reminder cron
+lib/agents/router.ts - router agent
+lib/agents/task.ts - task agent
+lib/agents/project.ts - project agent
+lib/agents/knowledge.ts - knowledge agent
+lib/agents/response.ts - response agent
+lib/agents/transcript.ts - transcript processor
+lib/agents/briefing.ts - briefing agent
+lib/agents/reminder.ts - reminder agent
+lib/db/supabase.ts - Supabase client
+lib/db/queries.ts - database queries
+lib/db/embeddings.ts - vector operations
+lib/services/telegram.ts - Telegram helpers
+lib/services/calendar.ts - Google Calendar
+lib/services/openrouter.ts - OpenRouter client
+lib/utils/context.ts - context management
+lib/utils/entity-resolver.ts - fuzzy matching
+lib/utils/types.ts - TypeScript types
+components/VoiceRecorder.tsx - recording component
+Summary
+This is a multi-agent system that:
+
+Receives messages via Telegram (text/voice) or web app recordings
+Routes to specialized agents based on intent
+Maintains conversation context to resolve "that task" references
+Stores project knowledge with vector embeddings for semantic search
+Sends proactive daily briefs and overdue reminders
+Speaks in a blunt, matter-of-fact voice with no templates
+The user is Patrick, a construction PM who needs help staying organized. His nephew Aidan built this. If it breaks, blame Aidan.

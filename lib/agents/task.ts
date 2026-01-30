@@ -1,4 +1,4 @@
-import { generateText, Output } from 'ai';
+import { generateText, tool } from 'ai';
 import { fastModel } from '@/lib/services/ai-provider';
 import { TaskAgentResponseSchema, type TaskAgentResponseOutput } from '@/lib/schemas/agent-schemas';
 import type {
@@ -78,14 +78,24 @@ function formatContextForPrompt(context: AgentContext): string {
  */
 export async function handleTaskIntent(context: AgentContext): Promise<TaskAgentResult> {
   try {
-    const { output: response } = await generateText({
+    const { toolCalls } = await generateText({
       model: fastModel,
-      output: Output.object({
-        schema: TaskAgentResponseSchema,
-      }),
+      tools: {
+        processTask: tool({
+          description: 'Process the task intent and return the appropriate action',
+          inputSchema: TaskAgentResponseSchema,
+        }),
+      },
+      toolChoice: { type: 'tool', toolName: 'processTask' },
       system: TASK_SYSTEM_PROMPT,
-      prompt: formatContextForPrompt(context),
+      prompt: formatContextForPrompt(context) + '\n\nYou MUST call the processTask tool with your response.',
     });
+
+    const toolCall = toolCalls[0];
+    if (!toolCall || toolCall.dynamic) {
+      throw new Error('No tool call result received');
+    }
+    const response = toolCall.input as TaskAgentResponseOutput;
 
     switch (response.action) {
       case 'create':

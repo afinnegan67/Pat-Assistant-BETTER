@@ -109,6 +109,7 @@ export type Intent =
   | 'project_query'
   | 'schedule_query'
   | 'knowledge_query'
+  | 'record_request'
   | 'general_chat';
 
 // Agent types

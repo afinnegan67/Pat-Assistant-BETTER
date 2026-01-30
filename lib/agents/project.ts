@@ -1,4 +1,4 @@
-import { generateText, Output } from 'ai';
+import { generateText, tool } from 'ai';
 import { fastModel } from '@/lib/services/ai-provider';
 import { ProjectAgentResponseSchema, type ProjectAgentResponseOutput } from '@/lib/schemas/agent-schemas';
 import type {
@@ -48,14 +48,24 @@ function formatContextForPrompt(context: AgentContext): string {
  */
 export async function handleProjectIntent(context: AgentContext): Promise<ProjectAgentResult> {
   try {
-    const { output: response } = await generateText({
+    const { toolCalls } = await generateText({
       model: fastModel,
-      output: Output.object({
-        schema: ProjectAgentResponseSchema,
-      }),
+      tools: {
+        processProject: tool({
+          description: 'Process the project intent and return the appropriate action',
+          inputSchema: ProjectAgentResponseSchema,
+        }),
+      },
+      toolChoice: { type: 'tool', toolName: 'processProject' },
       system: PROJECT_SYSTEM_PROMPT,
-      prompt: formatContextForPrompt(context),
+      prompt: formatContextForPrompt(context) + '\n\nYou MUST call the processProject tool with your response.',
     });
+
+    const toolCall = toolCalls[0];
+    if (!toolCall || toolCall.dynamic) {
+      throw new Error('No tool call result received');
+    }
+    const response = toolCall.input as ProjectAgentResponseOutput;
 
     if (response.action === 'create') {
       return await handleProjectCreate(response);

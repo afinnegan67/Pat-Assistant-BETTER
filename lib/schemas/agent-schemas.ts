@@ -12,6 +12,7 @@ export const IntentSchema = z.enum([
   'project_query',
   'schedule_query',
   'knowledge_query',
+  'record_request',
   'general_chat',
 ]);
 

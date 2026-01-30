@@ -1,4 +1,4 @@
-import { generateText, Output } from 'ai';
+import { generateText, tool } from 'ai';
 import { fastModel } from '@/lib/services/ai-provider';
 import { TranscriptResultSchema, type TranscriptResultOutput } from '@/lib/schemas/agent-schemas';
 import type {
@@ -37,19 +37,29 @@ export async function processTranscript(
   const projectNames = existingProjects.map(p => p.name).join(', ');
 
   try {
-    const { output: result } = await generateText({
+    const { toolCalls } = await generateText({
       model: fastModel,
-      output: Output.object({
-        schema: TranscriptResultSchema,
-      }),
+      tools: {
+        extractFromTranscript: tool({
+          description: 'Extract tasks, knowledge, and new projects from the transcript',
+          inputSchema: TranscriptResultSchema,
+        }),
+      },
+      toolChoice: { type: 'tool', toolName: 'extractFromTranscript' },
       system: TRANSCRIPT_SYSTEM_PROMPT,
       prompt: `Existing projects: ${projectNames || 'None'}
 
 Transcript:
 ${transcript}
 
-Extract all tasks, knowledge, and new projects from this transcript.`,
+Extract all tasks, knowledge, and new projects from this transcript. You MUST call the extractFromTranscript tool with your results.`,
     });
+
+    const toolCall = toolCalls[0];
+    if (!toolCall || toolCall.dynamic) {
+      throw new Error('No tool call result received');
+    }
+    const result = toolCall.input as TranscriptResultOutput;
 
     // Zod schema already validated and provided defaults
     return result as TranscriptProcessingResult;

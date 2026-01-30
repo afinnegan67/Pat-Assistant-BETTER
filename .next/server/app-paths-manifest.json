@@ -1,9 +1,9 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
   "/api/cron/daily-brief/route": "app/api/cron/daily-brief/route.js",
-  "/api/voice/transcribe/route": "app/api/voice/transcribe/route.js",
-  "/page": "app/page.js",
   "/api/cron/reminders/route": "app/api/cron/reminders/route.js",
+  "/api/telegram/webhook/route": "app/api/telegram/webhook/route.js",
   "/record/page": "app/record/page.js",
-  "/api/telegram/webhook/route": "app/api/telegram/webhook/route.js"
+  "/page": "app/page.js",
+  "/api/voice/transcribe/route": "app/api/voice/transcribe/route.js"
 }

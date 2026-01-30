@@ -1,4 +1,4 @@
-import { generateText, Output } from 'ai';
+import { generateText, tool } from 'ai';
 import { fastModel } from '@/lib/services/ai-provider';
 import { RouterResultSchema } from '@/lib/schemas/agent-schemas';
 import type {
@@ -24,6 +24,7 @@ Classify the intent into exactly one of:
 - project_query: User is asking about a project's status or details
 - schedule_query: User is asking about their schedule, calendar, or what they have to do
 - knowledge_query: User is asking about past decisions, context, or information
+- record_request: User wants to record a meeting, voice note, or make a recording
 - general_chat: Greetings, acknowledgments, or unclear intent
 
 Also extract any mentioned:
@@ -52,11 +53,15 @@ export async function routeMessage(
   activeContext: ActiveContext
 ): Promise<RouterResult> {
   try {
-    const { output } = await generateText({
+    const { toolCalls } = await generateText({
       model: fastModel,
-      output: Output.object({
-        schema: RouterResultSchema,
-      }),
+      tools: {
+        classifyIntent: tool({
+          description: 'Classify user intent and extract entities from the message',
+          inputSchema: RouterResultSchema,
+        }),
+      },
+      toolChoice: { type: 'tool', toolName: 'classifyIntent' },
       system: ROUTER_SYSTEM_PROMPT,
       prompt: `Active Context:
 ${buildContextSummary(activeContext)}
@@ -66,19 +71,25 @@ ${formatMessagesForContext(todaysMessages)}
 
 New message from Patrick: "${userMessage}"
 
-Classify this message and extract entities.`,
+Classify this message and extract entities. You MUST call the classifyIntent tool with your classification.`,
     });
 
+    const toolCall = toolCalls[0];
+    if (!toolCall || toolCall.dynamic) {
+      throw new Error('No tool call result received');
+    }
+    const result = toolCall.input;
+
     return {
-      intent: output.intent as Intent,
+      intent: result.intent as Intent,
       entities: {
-        projects: output.entities.projects,
-        tasks: output.entities.tasks,
-        deadline: output.entities.deadline,
-        priority: output.entities.priority as TaskPriority | null,
+        projects: result.entities.projects,
+        tasks: result.entities.tasks,
+        deadline: result.entities.deadline,
+        priority: result.entities.priority as TaskPriority | null,
       },
-      requires_lookup: output.requires_lookup,
-      confidence: output.confidence,
+      requires_lookup: result.requires_lookup,
+      confidence: result.confidence,
     };
   } catch (error) {
     console.error('Router error:', error);

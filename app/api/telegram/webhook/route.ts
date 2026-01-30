@@ -221,6 +221,9 @@ export async function POST(request: NextRequest) {
   try {
     // Verify webhook secret
     const secretHeader = request.headers.get('x-telegram-bot-api-secret-token');
+    console.log('Received secret:', secretHeader);
+    console.log('Expected secret:', TELEGRAM_WEBHOOK_SECRET);
+    console.log('Match:', secretHeader === TELEGRAM_WEBHOOK_SECRET);
     if (!verifyWebhookSecret(secretHeader, TELEGRAM_WEBHOOK_SECRET)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

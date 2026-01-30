@@ -136,7 +136,7 @@ async function processMessage(message: TelegramMessage): Promise<void> {
 
     // Handle record_request intent directly
     if (routerResult.intent === 'record_request') {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://your-app-url.vercel.app';
+      const appUrl = 'https://pat-assistant-better-1n5hd641w-opulence-ai.vercel.app';
       response = `Here's the recording link: ${appUrl}/record\n\nOpen this on your phone or computer to record a meeting or voice note. I'll process it and extract tasks and notes automatically.`;
     }
     // Route to specialist or generate direct response

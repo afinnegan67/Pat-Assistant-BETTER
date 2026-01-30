@@ -9,6 +9,7 @@ export default function RecordPage() {
     summary?: string;
     tasksCreated?: number;
     needsConfirmation?: boolean;
+    error?: string;
   } | null>(null);
 
   const handleComplete = (data: {
@@ -16,6 +17,7 @@ export default function RecordPage() {
     summary?: string;
     tasksCreated?: number;
     needsConfirmation?: boolean;
+    error?: string;
   }) => {
     setResult(data);
   };
@@ -115,7 +117,7 @@ export default function RecordPage() {
               </div>
               <p style={{ fontSize: '1.25rem' }}>Processing Failed</p>
               <p style={{ color: '#888', fontSize: '0.875rem' }}>
-                Your nephew Aidan failed to build me correctly. Blame him not me.
+                {result.error || 'Your nephew Aidan failed to build me correctly. Blame him not me.'}
               </p>
             </>
           )}

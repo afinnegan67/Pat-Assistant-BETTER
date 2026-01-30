@@ -39,34 +39,45 @@ async function transcribeAudio(audioBuffer: Buffer): Promise<{ text: string; dur
 }
 
 export async function POST(request: NextRequest) {
+  console.log('=== VOICE TRANSCRIBE API START ===');
   try {
     const formData = await request.formData();
     const audioFile = formData.get('audio') as File;
     const durationStr = formData.get('duration') as string;
 
+    console.log('Audio file received:', audioFile?.name, 'size:', audioFile?.size);
+
     if (!audioFile) {
+      console.log('No audio file provided');
       return NextResponse.json({ error: 'No audio file provided' }, { status: 400 });
     }
 
     // Convert file to buffer
     const arrayBuffer = await audioFile.arrayBuffer();
     const audioBuffer = Buffer.from(arrayBuffer);
+    console.log('Audio buffer created, length:', audioBuffer.length);
 
     // Transcribe
+    console.log('Starting ElevenLabs transcription...');
     const { text: transcriptText, duration: estimatedDuration } = await transcribeAudio(audioBuffer);
+    console.log('Transcription complete, text length:', transcriptText.length);
 
     // Use provided duration or estimate
     const durationSeconds = durationStr ? parseInt(durationStr, 10) : estimatedDuration;
 
     // Save transcript to database
+    console.log('Saving transcript to database...');
     const transcript = await saveVoiceTranscript({
       raw_content: transcriptText,
       duration_seconds: durationSeconds,
       source: 'webapp',
     });
+    console.log('Transcript saved, ID:', transcript.id);
 
     // Process transcript to extract tasks and knowledge
+    console.log('Processing transcript with AI...');
     const processingResult = await processTranscript(transcriptText, 'webapp');
+    console.log('Processing complete:', JSON.stringify(processingResult, null, 2));
 
     // Generate summary
     const summary = generateTranscriptSummary(processingResult);
@@ -112,11 +123,14 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Transcription error:', error);
+    console.error('=== VOICE TRANSCRIBE ERROR ===');
+    console.error('Error type:', (error as Error).constructor.name);
+    console.error('Error message:', (error as Error).message);
+    console.error('Error stack:', (error as Error).stack);
 
     // Notify Patrick of error
     try {
-      await sendMessageToPatrick('Your nephew Aidan failed to build me correctly. Blame him not me. (Voice transcription failed)');
+      await sendMessageToPatrick(`Voice transcription failed: ${(error as Error).message}`);
     } catch (e) {
       console.error('Failed to send error notification:', e);
     }

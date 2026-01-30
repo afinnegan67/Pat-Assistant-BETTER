@@ -8,6 +8,7 @@ interface VoiceRecorderProps {
     summary?: string;
     tasksCreated?: number;
     needsConfirmation?: boolean;
+    error?: string;
   }) => void;
 }
 
@@ -134,12 +135,14 @@ export default function VoiceRecorder({ onComplete }: VoiceRecorderProps) {
       formData.append('audio', audioBlob, 'recording.webm');
       formData.append('duration', duration.toString());
 
+      console.log('Sending recording to API, blob size:', audioBlob.size);
       const response = await fetch('/api/voice/transcribe', {
         method: 'POST',
         body: formData,
       });
 
       const data = await response.json();
+      console.log('API response:', response.status, data);
 
       if (response.ok) {
         onComplete({
@@ -149,11 +152,11 @@ export default function VoiceRecorder({ onComplete }: VoiceRecorderProps) {
           needsConfirmation: data.needsConfirmation,
         });
       } else {
-        onComplete({ success: false });
+        onComplete({ success: false, error: data.details || data.error || 'Unknown error' });
       }
     } catch (error) {
       console.error('Failed to process recording:', error);
-      onComplete({ success: false });
+      onComplete({ success: false, error: (error as Error).message });
     }
   };
 

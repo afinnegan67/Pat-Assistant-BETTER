@@ -37,6 +37,7 @@ export async function processTranscript(
   const projectNames = existingProjects.map(p => p.name).join(', ');
 
   try {
+    console.log('Transcript processing: calling AI with tool calling...');
     const { toolCalls } = await generateText({
       model: fastModel,
       tools: {
@@ -55,16 +56,25 @@ ${transcript}
 Extract all tasks, knowledge, and new projects from this transcript. You MUST call the extractFromTranscript tool with your results.`,
     });
 
+    console.log('Transcript processing: got toolCalls response, count:', toolCalls?.length);
     const toolCall = toolCalls[0];
-    if (!toolCall || toolCall.dynamic) {
+    if (!toolCall) {
+      console.error('Transcript processing: No tool call in response');
       throw new Error('No tool call result received');
     }
+    if (toolCall.dynamic) {
+      console.error('Transcript processing: Got dynamic tool call instead of static');
+      throw new Error('Dynamic tool call received');
+    }
+    console.log('Transcript processing: extracting input from tool call');
     const result = toolCall.input as TranscriptResultOutput;
+    console.log('Transcript processing: result:', JSON.stringify(result, null, 2));
 
     // Zod schema already validated and provided defaults
     return result as TranscriptProcessingResult;
   } catch (error) {
     console.error('Transcript processing error:', error);
+    console.error('Error details:', (error as Error).message);
     return {
       tasks: [],
       knowledge: [],

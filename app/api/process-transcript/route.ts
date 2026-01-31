@@ -13,13 +13,31 @@ export async function POST(request: NextRequest) {
   console.log('=== PROCESS TRANSCRIPT START ===');
 
   try {
+    // Debug: Log all headers
+    const allHeaders: Record<string, string> = {};
+    request.headers.forEach((value, key) => {
+      allHeaders[key] = key.toLowerCase().includes('secret') ? `${value.substring(0, 10)}...(len:${value.length})` : value;
+    });
+    console.log('Incoming headers:', JSON.stringify(allHeaders, null, 2));
+    console.log('Expected secret configured:', !!SUPABASE_WEBHOOK_SECRET);
+    if (SUPABASE_WEBHOOK_SECRET) {
+      console.log('Expected secret preview:', `${SUPABASE_WEBHOOK_SECRET.substring(0, 10)}...(len:${SUPABASE_WEBHOOK_SECRET.length})`);
+    }
+
     // Verify request is from Supabase (if secret is configured)
     if (SUPABASE_WEBHOOK_SECRET) {
       const authHeader = request.headers.get('x-supabase-webhook-secret');
+      console.log('Auth header received:', authHeader ? `${authHeader.substring(0, 10)}...(len:${authHeader.length})` : 'NULL');
+      console.log('Secrets match:', authHeader === SUPABASE_WEBHOOK_SECRET);
+
       if (authHeader !== SUPABASE_WEBHOOK_SECRET) {
         console.error('Unauthorized: Invalid webhook secret');
+        console.error('Expected:', SUPABASE_WEBHOOK_SECRET?.substring(0, 10));
+        console.error('Received:', authHeader?.substring(0, 10));
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
+    } else {
+      console.log('No SUPABASE_WEBHOOK_SECRET configured - skipping auth check');
     }
 
     const body = await request.json();

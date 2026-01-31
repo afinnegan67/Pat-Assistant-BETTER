@@ -436,15 +436,29 @@ export async function savePendingApproval(
   transcriptId: string,
   processingResult: TranscriptProcessingResult
 ): Promise<void> {
-  const { error } = await supabase
+  console.log('savePendingApproval called for transcript:', transcriptId);
+  console.log('Setting pending_approval to true and storing processing_result');
+
+  const { data, error, count } = await supabase
     .from('voice_transcripts')
     .update({
       pending_approval: true,
       processing_result: processingResult,
     })
-    .eq('id', transcriptId);
+    .eq('id', transcriptId)
+    .select();
+
+  console.log('Supabase update result - error:', error);
+  console.log('Supabase update result - data:', JSON.stringify(data));
+  console.log('Supabase update result - count:', count);
 
   if (error) throw new Error(`Failed to save pending approval: ${error.message}`);
+
+  if (!data || data.length === 0) {
+    console.error('WARNING: Update returned no data - row may not have been updated!');
+  } else {
+    console.log('Updated row pending_approval value:', data[0]?.pending_approval);
+  }
 }
 
 export async function getLatestPendingApproval(): Promise<{ id: string; result: TranscriptProcessingResult } | null> {

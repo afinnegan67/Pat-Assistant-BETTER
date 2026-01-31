@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { TelegramUpdate, TelegramMessage, AgentContext, Intent } from '@/lib/utils/types';
-import { sendMessage, sendTypingAction, downloadVoiceNote, verifyWebhookSecret, sendErrorToPatrick } from '@/lib/services/telegram';
-import { getOrCreateConversation, saveMessage } from '@/lib/db/queries';
+import { sendMessage, sendTypingAction, downloadVoiceNote, verifyWebhookSecret, sendErrorToPatrick, sendMessageToPatrick } from '@/lib/services/telegram';
+import { getOrCreateConversation, saveMessage, getLatestPendingApproval, clearPendingApproval, savePendingApproval, updateTranscriptProcessed } from '@/lib/db/queries';
 import { loadActiveContext, loadTodaysMessages, mergeContext, updateContextWithNewTask, updateContextWithNewProject } from '@/lib/utils/context';
 import { resolveEntities } from '@/lib/utils/entity-resolver';
 import { routeMessage, needsSpecialist, getSpecialistAgent } from '@/lib/agents/router';
@@ -9,6 +9,8 @@ import { handleTaskIntent } from '@/lib/agents/task';
 import { handleProjectIntent } from '@/lib/agents/project';
 import { handleKnowledgeQuery, handleProjectQuery } from '@/lib/agents/knowledge';
 import { generateResponse, generateGeneralChatResponse, generateDisambiguationResponse } from '@/lib/agents/response';
+import { commitTranscriptData, generateTranscriptSummary } from '@/lib/agents/transcript';
+import { interpretApprovalResponse, applyEdits } from '@/lib/agents/approval';
 import { getTodaysTasks, getOverdueTasks } from '@/lib/db/queries';
 import { getTodaysEvents } from '@/lib/services/calendar';
 
@@ -84,6 +86,47 @@ async function processMessage(message: TelegramMessage): Promise<void> {
     // Show typing indicator (non-blocking, don't let it fail the request)
     sendTypingAction(chatId).catch(() => {});
 
+    // ============ CHECK FOR PENDING TRANSCRIPT APPROVAL ============
+    // This needs to happen BEFORE normal message routing
+    const pending = await getLatestPendingApproval();
+    if (pending) {
+      console.log('Found pending approval, interpreting response...');
+      const decision = await interpretApprovalResponse(messageText, pending.result);
+      console.log('Approval decision:', decision.action, decision.reasoning);
+
+      if (decision.action === 'approve') {
+        // Commit to database (date conversion happens in commitTranscriptData)
+        const commitResult = await commitTranscriptData(pending.result, pending.id);
+        await updateTranscriptProcessed(pending.id, generateTranscriptSummary(pending.result));
+        await clearPendingApproval(pending.id);
+
+        await sendMessage(chatId,
+          `Got it. Saved ${commitResult.tasksCreated} tasks and ${commitResult.knowledgeAdded} knowledge items` +
+          (commitResult.projectsCreated > 0 ? `, plus ${commitResult.projectsCreated} new projects.` : '.')
+        );
+        return;
+      }
+
+      if (decision.action === 'reject') {
+        await clearPendingApproval(pending.id);
+        await sendMessage(chatId, "Alright, I've discarded that recording.");
+        return;
+      }
+
+      if (decision.action === 'edit') {
+        // Apply edits and ask again
+        const updatedResult = applyEdits(pending.result, decision.edits);
+        await savePendingApproval(pending.id, updatedResult);
+        const summary = generateTranscriptSummary(updatedResult);
+        await sendMessage(chatId, `Updated:\n\n${summary}\n\nHow does that look now?`);
+        return;
+      }
+
+      // If 'unrelated', fall through to normal message processing
+      console.log('Message unrelated to pending approval, processing normally');
+    }
+
+    // ============ NORMAL MESSAGE PROCESSING ============
     // Get or create today's conversation
     const conversationId = await getOrCreateConversation();
 

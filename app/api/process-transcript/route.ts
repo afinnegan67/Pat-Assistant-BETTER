@@ -1,0 +1,85 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { processTranscript, generateTranscriptSummary } from '@/lib/agents/transcript';
+import { getVoiceTranscript, savePendingApproval } from '@/lib/db/queries';
+import { sendMessageToPatrick } from '@/lib/services/telegram';
+
+const SUPABASE_WEBHOOK_SECRET = process.env.SUPABASE_WEBHOOK_SECRET;
+
+/**
+ * This endpoint is called by a Supabase trigger when a new voice transcript is inserted.
+ * It processes the transcript with AI to extract tasks/knowledge, then sends to Telegram for approval.
+ */
+export async function POST(request: NextRequest) {
+  console.log('=== PROCESS TRANSCRIPT START ===');
+
+  try {
+    // Verify request is from Supabase (if secret is configured)
+    if (SUPABASE_WEBHOOK_SECRET) {
+      const authHeader = request.headers.get('x-supabase-webhook-secret');
+      if (authHeader !== SUPABASE_WEBHOOK_SECRET) {
+        console.error('Unauthorized: Invalid webhook secret');
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+    }
+
+    const body = await request.json();
+    const transcriptId = body.transcript_id || body.record?.id;
+
+    if (!transcriptId) {
+      console.error('No transcript ID provided');
+      return NextResponse.json({ error: 'No transcript ID provided' }, { status: 400 });
+    }
+
+    console.log('Processing transcript:', transcriptId);
+
+    // Get the transcript from database
+    const transcript = await getVoiceTranscript(transcriptId);
+    if (!transcript) {
+      console.error('Transcript not found:', transcriptId);
+      return NextResponse.json({ error: 'Transcript not found' }, { status: 404 });
+    }
+
+    console.log('Transcript found, length:', transcript.raw_content.length);
+
+    // Process with AI to extract tasks, knowledge, projects
+    console.log('Processing with AI...');
+    const processingResult = await processTranscript(transcript.raw_content, transcript.source);
+    console.log('Processing complete:', JSON.stringify(processingResult, null, 2));
+
+    // Generate human-readable summary
+    const summary = generateTranscriptSummary(processingResult);
+
+    // Store processing result for approval
+    await savePendingApproval(transcriptId, processingResult);
+    console.log('Pending approval saved');
+
+    // Send to Telegram for human approval (natural language, no commands)
+    const message = `Hey, just processed that recording. Here's what I got:\n\n${summary}\n\nDoes this look right?`;
+    await sendMessageToPatrick(message);
+    console.log('Telegram notification sent');
+
+    return NextResponse.json({
+      success: true,
+      transcriptId,
+      tasksFound: processingResult.tasks.length,
+      knowledgeFound: processingResult.knowledge.length,
+      projectsFound: processingResult.new_projects.length,
+    });
+
+  } catch (error) {
+    console.error('=== PROCESS TRANSCRIPT ERROR ===');
+    console.error('Error:', error);
+
+    // Try to notify Patrick of the error
+    try {
+      await sendMessageToPatrick(`Had trouble processing that recording: ${(error as Error).message}`);
+    } catch (e) {
+      console.error('Failed to send error notification:', e);
+    }
+
+    return NextResponse.json(
+      { error: 'Processing failed', details: (error as Error).message },
+      { status: 500 }
+    );
+  }
+}

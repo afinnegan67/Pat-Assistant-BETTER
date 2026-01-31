@@ -69,6 +69,8 @@ export interface VoiceTranscript {
   processed: boolean;
   processed_at: string | null;
   processing_summary: string | null;
+  pending_approval: boolean;
+  processing_result: TranscriptProcessingResult | null;
 }
 
 export interface DailyBrief {

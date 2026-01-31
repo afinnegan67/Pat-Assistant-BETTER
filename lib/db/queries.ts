@@ -12,6 +12,7 @@ import type {
   TaskStatus,
   TaskPriority,
   KnowledgeSource,
+  TranscriptProcessingResult,
 } from '@/lib/utils/types';
 
 // ============ CONVERSATIONS ============
@@ -418,6 +419,54 @@ export async function updateTranscriptProcessed(
     .eq('id', transcriptId);
 
   if (error) throw new Error(`Failed to update transcript: ${error.message}`);
+}
+
+export async function getVoiceTranscript(id: string): Promise<VoiceTranscript | null> {
+  const { data, error } = await supabase
+    .from('voice_transcripts')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) return null;
+  return data as VoiceTranscript;
+}
+
+export async function savePendingApproval(
+  transcriptId: string,
+  processingResult: TranscriptProcessingResult
+): Promise<void> {
+  const { error } = await supabase
+    .from('voice_transcripts')
+    .update({
+      pending_approval: true,
+      processing_result: processingResult,
+    })
+    .eq('id', transcriptId);
+
+  if (error) throw new Error(`Failed to save pending approval: ${error.message}`);
+}
+
+export async function getLatestPendingApproval(): Promise<{ id: string; result: TranscriptProcessingResult } | null> {
+  const { data, error } = await supabase
+    .from('voice_transcripts')
+    .select('id, processing_result')
+    .eq('pending_approval', true)
+    .order('recorded_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error || !data || !data.processing_result) return null;
+  return { id: data.id, result: data.processing_result as TranscriptProcessingResult };
+}
+
+export async function clearPendingApproval(transcriptId: string): Promise<void> {
+  const { error } = await supabase
+    .from('voice_transcripts')
+    .update({ pending_approval: false })
+    .eq('id', transcriptId);
+
+  if (error) throw new Error(`Failed to clear pending approval: ${error.message}`);
 }
 
 // ============ DAILY BRIEFS ============

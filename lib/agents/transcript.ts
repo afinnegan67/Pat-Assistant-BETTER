@@ -8,6 +8,7 @@ import type {
 } from '@/lib/utils/types';
 import { createTask, createProject, addProjectKnowledge, getProjectByName, getAllProjects } from '@/lib/db/queries';
 import { generateEmbedding } from '@/lib/db/embeddings';
+import { convertRelativeDate } from '@/lib/utils/date-helpers';
 
 const TRANSCRIPT_SYSTEM_PROMPT = `You are the transcript processor for Patrick's construction assistant. You analyze meeting transcripts and voice notes to extract:
 
@@ -136,7 +137,7 @@ export async function commitTranscriptData(
     await createTask({
       description: task.description,
       project_id: projectId,
-      deadline: task.deadline,
+      deadline: convertRelativeDate(task.deadline),
       priority: (task.priority || 'medium') as TaskPriority,
     });
 

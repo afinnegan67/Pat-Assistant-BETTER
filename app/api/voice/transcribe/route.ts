@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { saveVoiceTranscript, updateTranscriptProcessed } from '@/lib/db/queries';
-import { processTranscript, commitTranscriptData, generateTranscriptSummary } from '@/lib/agents/transcript';
-import { sendMessageToPatrick } from '@/lib/services/telegram';
+import { saveVoiceTranscript } from '@/lib/db/queries';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 
 const elevenlabs = new ElevenLabsClient({
   apiKey: process.env.ELEVENLABS_API_KEY,
 });
-
-// Threshold for requiring confirmation (30 minutes)
-const CONFIRMATION_THRESHOLD_SECONDS = 30 * 60;
 
 async function transcribeAudio(audioBuffer: Buffer): Promise<{ text: string; duration: number }> {
   console.log('Sending to ElevenLabs, buffer size:', audioBuffer.length);
@@ -63,7 +58,7 @@ export async function POST(request: NextRequest) {
     const audioBuffer = Buffer.from(arrayBuffer);
     console.log('Audio buffer created, length:', audioBuffer.length);
 
-    // Transcribe
+    // Transcribe with ElevenLabs
     console.log('Starting ElevenLabs transcription...');
     const { text: transcriptText, duration: estimatedDuration } = await transcribeAudio(audioBuffer);
     console.log('Transcription complete, text length:', transcriptText.length);
@@ -71,7 +66,7 @@ export async function POST(request: NextRequest) {
     // Use provided duration or estimate
     const durationSeconds = durationStr ? parseInt(durationStr, 10) : estimatedDuration;
 
-    // Save transcript to database
+    // Save raw transcript to database - Supabase trigger will handle processing
     console.log('Saving transcript to database...');
     const transcript = await saveVoiceTranscript({
       raw_content: transcriptText,
@@ -79,53 +74,13 @@ export async function POST(request: NextRequest) {
       source: 'webapp',
     });
     console.log('Transcript saved, ID:', transcript.id);
+    console.log('Supabase trigger will now process the transcript asynchronously');
 
-    // Process transcript to extract tasks and knowledge
-    console.log('Processing transcript with AI...');
-    const processingResult = await processTranscript(transcriptText, 'webapp');
-    console.log('Processing complete:', JSON.stringify(processingResult, null, 2));
-
-    // Generate summary
-    const summary = generateTranscriptSummary(processingResult);
-
-    // Check if confirmation is needed (long recordings)
-    const needsConfirmation = durationSeconds > CONFIRMATION_THRESHOLD_SECONDS;
-
-    if (needsConfirmation) {
-      // Store processing result for later confirmation
-      // For now, just notify Patrick and ask for confirmation
-      await sendMessageToPatrick(
-        `Processed ${Math.round(durationSeconds / 60)} minute recording.\n\n${summary}\n\nReply "confirm" to save this data, or "cancel" to discard.`
-      );
-
-      return NextResponse.json({
-        success: true,
-        transcriptId: transcript.id,
-        summary,
-        needsConfirmation: true,
-        message: 'Long recording - awaiting confirmation',
-      });
-    }
-
-    // For short recordings, commit immediately
-    const commitResult = await commitTranscriptData(processingResult, transcript.id);
-
-    // Update transcript as processed
-    await updateTranscriptProcessed(transcript.id, summary);
-
-    // Notify Patrick
-    const notification = `Processed recording: ${commitResult.tasksCreated} tasks created, ${commitResult.knowledgeAdded} knowledge chunks stored${commitResult.projectsCreated > 0 ? `, ${commitResult.projectsCreated} new projects` : ''}.`;
-
-    await sendMessageToPatrick(notification);
-
+    // Return immediately - processing happens via Supabase trigger
     return NextResponse.json({
       success: true,
       transcriptId: transcript.id,
-      summary,
-      needsConfirmation: false,
-      tasksCreated: commitResult.tasksCreated,
-      knowledgeAdded: commitResult.knowledgeAdded,
-      projectsCreated: commitResult.projectsCreated,
+      message: 'Transcript saved. Processing will begin shortly.',
     });
 
   } catch (error) {
@@ -134,48 +89,8 @@ export async function POST(request: NextRequest) {
     console.error('Error message:', (error as Error).message);
     console.error('Error stack:', (error as Error).stack);
 
-    // Notify Patrick of error
-    try {
-      await sendMessageToPatrick(`Voice transcription failed: ${(error as Error).message}`);
-    } catch (e) {
-      console.error('Failed to send error notification:', e);
-    }
-
     return NextResponse.json(
       { error: 'Transcription failed', details: (error as Error).message },
-      { status: 500 }
-    );
-  }
-}
-
-// Endpoint to confirm long transcript processing
-export async function PUT(request: NextRequest) {
-  try {
-    const { transcriptId, action } = await request.json();
-
-    if (!transcriptId) {
-      return NextResponse.json({ error: 'No transcript ID provided' }, { status: 400 });
-    }
-
-    if (action === 'cancel') {
-      await sendMessageToPatrick('Recording discarded.');
-      return NextResponse.json({ success: true, message: 'Transcript discarded' });
-    }
-
-    if (action === 'confirm') {
-      // Re-process and commit
-      // In a production app, you'd store the processing result and retrieve it here
-      // For now, we'd need to re-process the transcript
-      await sendMessageToPatrick('Recording data saved.');
-      return NextResponse.json({ success: true, message: 'Transcript committed' });
-    }
-
-    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
-
-  } catch (error) {
-    console.error('Confirmation error:', error);
-    return NextResponse.json(
-      { error: 'Confirmation failed', details: (error as Error).message },
       { status: 500 }
     );
   }

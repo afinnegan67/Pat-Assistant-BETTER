@@ -73,8 +73,19 @@ export async function POST(request: NextRequest) {
 
     // Send to Telegram for human approval (natural language, no commands)
     const message = `Hey, just processed that recording. Here's what I got:\n\n${summary}\n\nDoes this look right?`;
-    await sendMessageToPatrick(message);
-    console.log('Telegram notification sent');
+    console.log('Attempting to send Telegram message...');
+    console.log('Message preview:', message.substring(0, 200));
+    console.log('TELEGRAM_BOT_TOKEN configured:', !!process.env.TELEGRAM_BOT_TOKEN);
+    console.log('PATRICK_TELEGRAM_ID configured:', !!process.env.PATRICK_TELEGRAM_ID);
+    console.log('PATRICK_TELEGRAM_ID value:', process.env.PATRICK_TELEGRAM_ID);
+    try {
+      await sendMessageToPatrick(message);
+      console.log('Telegram notification sent successfully');
+    } catch (telegramError) {
+      console.error('Telegram send FAILED:', telegramError);
+      console.error('Telegram error details:', (telegramError as Error).message);
+      // Don't throw - the processing still succeeded, just notification failed
+    }
 
     return NextResponse.json({
       success: true,

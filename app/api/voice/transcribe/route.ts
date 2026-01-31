@@ -2,47 +2,44 @@ import { NextRequest, NextResponse } from 'next/server';
 import { saveVoiceTranscript, updateTranscriptProcessed } from '@/lib/db/queries';
 import { processTranscript, commitTranscriptData, generateTranscriptSummary } from '@/lib/agents/transcript';
 import { sendMessageToPatrick } from '@/lib/services/telegram';
-import FormData from 'form-data';
+import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
+const elevenlabs = new ElevenLabsClient({
+  apiKey: process.env.ELEVENLABS_API_KEY,
+});
 
 // Threshold for requiring confirmation (30 minutes)
 const CONFIRMATION_THRESHOLD_SECONDS = 30 * 60;
 
 async function transcribeAudio(audioBuffer: Buffer): Promise<{ text: string; duration: number }> {
-  // Use form-data package for proper multipart handling in serverless environments
-  const formData = new FormData();
-  formData.append('file', audioBuffer, {
-    filename: 'recording.webm',
-    contentType: 'audio/webm',
-  });
-  formData.append('model_id', 'scribe_v1');
-
   console.log('Sending to ElevenLabs, buffer size:', audioBuffer.length);
 
-  const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
-    method: 'POST',
-    headers: {
-      'xi-api-key': ELEVENLABS_API_KEY,
-      ...formData.getHeaders(),
-    },
-    // @ts-expect-error - form-data Buffer is compatible with fetch body in Node.js
-    body: formData.getBuffer(),
+  // Convert Buffer to Uint8Array for Blob compatibility
+  const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/webm' });
+
+  const result = await elevenlabs.speechToText.convert({
+    file: audioBlob,
+    modelId: 'scribe_v2',
   });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Transcription failed: ${error}`);
+  // Handle the union response type - extract text from the appropriate field
+  let transcriptText: string;
+  if ('text' in result) {
+    // SpeechToTextChunkResponseModel (single channel)
+    transcriptText = result.text;
+  } else if ('transcripts' in result && result.transcripts.length > 0) {
+    // MultichannelSpeechToTextResponseModel - combine all channel transcripts
+    transcriptText = result.transcripts.map(t => t.text).join(' ');
+  } else {
+    throw new Error('Unexpected response format from ElevenLabs');
   }
 
-  const data = await response.json();
-
   // Estimate duration from text length (rough approximation: ~150 words per minute)
-  const wordCount = data.text.split(/\s+/).length;
+  const wordCount = transcriptText.split(/\s+/).length;
   const estimatedDuration = Math.round((wordCount / 150) * 60);
 
   return {
-    text: data.text,
+    text: transcriptText,
     duration: estimatedDuration,
   };
 }

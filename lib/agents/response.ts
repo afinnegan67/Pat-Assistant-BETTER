@@ -44,6 +44,16 @@ interface ResponseContext {
   error?: string;
 }
 
+function formatConversationHistory(messages: Message[]): string {
+  if (messages.length === 0) return 'No previous messages today.';
+
+  // Take last 10 messages for context
+  const recent = messages.slice(-10);
+  return recent
+    .map(m => `${m.role === 'user' ? 'Patrick' : 'Assistant'}: ${m.content}`)
+    .join('\n');
+}
+
 function formatTaskForResponse(task: Task): string {
   const parts = [task.description];
 
@@ -145,19 +155,23 @@ function buildResultSummary(context: ResponseContext): string {
  */
 export async function generateResponse(context: ResponseContext): Promise<string> {
   const resultSummary = buildResultSummary(context);
+  const conversationHistory = formatConversationHistory(context.todaysMessages);
 
   try {
     const { text } = await generateText({
       model: smartModel,
       system: RESPONSE_SYSTEM_PROMPT,
-      prompt: `Patrick said: "${context.userMessage}"
+      prompt: `Today's conversation so far:
+${conversationHistory}
+
+Patrick's latest message: "${context.userMessage}"
 
 Intent classified as: ${context.intent}
 
 Result from specialist agent:
 ${resultSummary}
 
-Generate a natural, blunt response for Patrick. Remember: no fluff, no apologies, no corporate speak.`,
+Generate a natural, blunt response for Patrick. Use the conversation history for context - if he references something discussed earlier, acknowledge it naturally. Remember: no fluff, no apologies, no corporate speak.`,
     });
 
     return text.trim();
@@ -190,13 +204,18 @@ export async function generateGeneralChatResponse(
   }
 
   // For anything else, use the LLM
+  const conversationHistory = formatConversationHistory(todaysMessages);
+
   try {
     const { text } = await generateText({
       model: smartModel,
       system: RESPONSE_SYSTEM_PROMPT,
-      prompt: `Patrick said: "${userMessage}"
+      prompt: `Today's conversation so far:
+${conversationHistory}
 
-This is general chat - not a task, project, or query request. Generate a brief, natural response. Don't be robotic but don't be overly friendly either.`,
+Patrick's latest message: "${userMessage}"
+
+This is general chat - not a task, project, or query request. Generate a brief, natural response. Use the conversation history for context if relevant. Don't be robotic but don't be overly friendly either.`,
     });
 
     return text.trim();

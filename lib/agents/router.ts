@@ -22,7 +22,7 @@ Classify the intent into exactly one of:
 - project_create: User wants to create a new project/job site
 - project_update: User wants to modify a project (status, details)
 - project_query: User is asking about a project's status or details
-- schedule_query: User is asking about their schedule, calendar, or what they have to do
+- schedule_query: User is asking about their schedule, calendar, appointments, meetings, or what they have to do. Also use this when user asks if you can access/check/see their Google Calendar or wants to test calendar access
 - knowledge_query: User is asking about past decisions, context, or information
 - record_request: User wants to record a meeting, voice note, or make a recording
 - general_chat: Greetings, acknowledgments, or unclear intent

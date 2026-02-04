@@ -77,22 +77,62 @@ function buildResultSummary(context: ResponseContext): string {
   }
 
   if (intent === 'schedule_query') {
-    const parts: string[] = [];
-
-    if (tasks && tasks.length > 0) {
-      parts.push(`Tasks (${tasks.length}):`);
-      tasks.forEach(t => parts.push(`- ${formatTaskForResponse(t)}`));
+    // Combine tasks and calendar events into a unified schedule
+    interface ScheduleItem {
+      time: Date | null;
+      timeDisplay: string;
+      description: string;
+      type: 'task' | 'event';
     }
 
+    const scheduleItems: ScheduleItem[] = [];
+
+    // Add calendar events
     if (events && events.length > 0) {
-      parts.push(`\nCalendar events:`);
       events.forEach(e => {
-        const time = new Date(e.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-        parts.push(`- ${time}: ${e.summary}`);
+        const time = new Date(e.start);
+        scheduleItems.push({
+          time,
+          timeDisplay: time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+          description: e.summary,
+          type: 'event',
+        });
       });
     }
 
-    return parts.join('\n') || 'No tasks or events today.';
+    // Add tasks with deadlines
+    if (tasks && tasks.length > 0) {
+      tasks.forEach(t => {
+        const taskTime = t.deadline ? new Date(t.deadline) : null;
+        const priorityNote = t.priority !== 'medium' ? ` (${t.priority} priority)` : '';
+        scheduleItems.push({
+          time: taskTime,
+          timeDisplay: taskTime ? taskTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'No time set',
+          description: `${t.description}${priorityNote}`,
+          type: 'task',
+        });
+      });
+    }
+
+    if (scheduleItems.length === 0) {
+      return 'Nothing on your calendar today.';
+    }
+
+    // Sort by time (items without time go to end)
+    scheduleItems.sort((a, b) => {
+      if (!a.time && !b.time) return 0;
+      if (!a.time) return 1;
+      if (!b.time) return -1;
+      return a.time.getTime() - b.time.getTime();
+    });
+
+    // Format as unified list
+    const parts = [`Today's schedule (${scheduleItems.length} items):`];
+    scheduleItems.forEach(item => {
+      parts.push(`- ${item.timeDisplay}: ${item.description}`);
+    });
+
+    return parts.join('\n');
   }
 
   if (!result) {

@@ -4,6 +4,7 @@ import { getVoiceTranscript, savePendingApproval } from '@/lib/db/queries';
 import { sendMessage } from '@/lib/services/telegram';
 
 const AIDAN_TELEGRAM_ID = process.env.AIDAN_TELEGRAM_ID!;
+const PATRICK_TELEGRAM_ID = process.env.PATRICK_TELEGRAM_ID!;
 
 const SUPABASE_WEBHOOK_SECRET = process.env.SUPABASE_WEBHOOK_SECRET;
 
@@ -75,14 +76,16 @@ export async function POST(request: NextRequest) {
 
     // Send to Telegram for human approval (natural language, no commands)
     const message = `Hey, just processed that recording. Here's what I got:\n\n${summary}\n\nDoes this look right?`;
-    console.log('Attempting to send Telegram message...');
+    console.log('Attempting to send Telegram messages to both Aidan and Patrick...');
     console.log('Message preview:', message.substring(0, 200));
-    console.log('TELEGRAM_BOT_TOKEN configured:', !!process.env.TELEGRAM_BOT_TOKEN);
-    console.log('AIDAN_TELEGRAM_ID configured:', !!AIDAN_TELEGRAM_ID);
-    console.log('AIDAN_TELEGRAM_ID value:', AIDAN_TELEGRAM_ID);
+
+    // Send to both Aidan and Patrick
     try {
-      await sendMessage(AIDAN_TELEGRAM_ID, message);
-      console.log('Telegram notification sent successfully');
+      await Promise.all([
+        sendMessage(AIDAN_TELEGRAM_ID, message),
+        sendMessage(PATRICK_TELEGRAM_ID, message),
+      ]);
+      console.log('Telegram notifications sent to both users');
     } catch (telegramError) {
       console.error('Telegram send FAILED:', telegramError);
       console.error('Telegram error details:', (telegramError as Error).message);
@@ -101,9 +104,13 @@ export async function POST(request: NextRequest) {
     console.error('=== PROCESS TRANSCRIPT ERROR ===');
     console.error('Error:', error);
 
-    // Try to notify Aidan of the error
+    // Try to notify both of the error
     try {
-      await sendMessage(AIDAN_TELEGRAM_ID, `Had trouble processing that recording: ${(error as Error).message}`);
+      const errorMsg = `Had trouble processing that recording: ${(error as Error).message}`;
+      await Promise.all([
+        sendMessage(AIDAN_TELEGRAM_ID, errorMsg),
+        sendMessage(PATRICK_TELEGRAM_ID, errorMsg),
+      ]);
     } catch (e) {
       console.error('Failed to send error notification:', e);
     }

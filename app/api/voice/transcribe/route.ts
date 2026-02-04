@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { saveVoiceTranscript, savePendingApproval } from '@/lib/db/queries';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import { processTranscript, generateTranscriptSummary } from '@/lib/agents/transcript';
-import { sendMessageToPatrick } from '@/lib/services/telegram';
+import { sendMessage } from '@/lib/services/telegram';
+
+const AIDAN_TELEGRAM_ID = process.env.AIDAN_TELEGRAM_ID!;
 
 const elevenlabs = new ElevenLabsClient({
   apiKey: process.env.ELEVENLABS_API_KEY,
@@ -89,7 +91,7 @@ export async function POST(request: NextRequest) {
 
     if (!hasContent) {
       console.log('No tasks, knowledge, or projects extracted');
-      await sendMessageToPatrick('Processed your voice note but found nothing to extract. Was it just casual conversation?');
+      await sendMessage(AIDAN_TELEGRAM_ID, 'Processed your voice note but found nothing to extract. Was it just casual conversation?');
       return NextResponse.json({
         success: true,
         transcriptId: transcript.id,
@@ -103,10 +105,10 @@ export async function POST(request: NextRequest) {
     console.log('Saving pending approval...');
     await savePendingApproval(transcript.id, processingResult);
 
-    // Generate summary and send to Patrick for approval
+    // Generate summary and send for approval
     const summary = generateTranscriptSummary(processingResult);
-    console.log('Sending approval request to Patrick...');
-    await sendMessageToPatrick(`Voice note processed:\n\n${summary}\n\nLooks good? Reply "yes" to save, "no" to discard, or tell me what to change.`);
+    console.log('Sending approval request to Aidan...');
+    await sendMessage(AIDAN_TELEGRAM_ID, `Voice note processed:\n\n${summary}\n\nLooks good? Reply "yes" to save, "no" to discard, or tell me what to change.`);
 
     return NextResponse.json({
       success: true,

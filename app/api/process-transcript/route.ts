@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processTranscript, generateTranscriptSummary } from '@/lib/agents/transcript';
 import { getVoiceTranscript, savePendingApproval } from '@/lib/db/queries';
-import { sendMessageToPatrick } from '@/lib/services/telegram';
+import { sendMessage } from '@/lib/services/telegram';
+
+const AIDAN_TELEGRAM_ID = process.env.AIDAN_TELEGRAM_ID!;
 
 const SUPABASE_WEBHOOK_SECRET = process.env.SUPABASE_WEBHOOK_SECRET;
 
@@ -76,10 +78,10 @@ export async function POST(request: NextRequest) {
     console.log('Attempting to send Telegram message...');
     console.log('Message preview:', message.substring(0, 200));
     console.log('TELEGRAM_BOT_TOKEN configured:', !!process.env.TELEGRAM_BOT_TOKEN);
-    console.log('PATRICK_TELEGRAM_ID configured:', !!process.env.PATRICK_TELEGRAM_ID);
-    console.log('PATRICK_TELEGRAM_ID value:', process.env.PATRICK_TELEGRAM_ID);
+    console.log('AIDAN_TELEGRAM_ID configured:', !!AIDAN_TELEGRAM_ID);
+    console.log('AIDAN_TELEGRAM_ID value:', AIDAN_TELEGRAM_ID);
     try {
-      await sendMessageToPatrick(message);
+      await sendMessage(AIDAN_TELEGRAM_ID, message);
       console.log('Telegram notification sent successfully');
     } catch (telegramError) {
       console.error('Telegram send FAILED:', telegramError);
@@ -99,9 +101,9 @@ export async function POST(request: NextRequest) {
     console.error('=== PROCESS TRANSCRIPT ERROR ===');
     console.error('Error:', error);
 
-    // Try to notify Patrick of the error
+    // Try to notify Aidan of the error
     try {
-      await sendMessageToPatrick(`Had trouble processing that recording: ${(error as Error).message}`);
+      await sendMessage(AIDAN_TELEGRAM_ID, `Had trouble processing that recording: ${(error as Error).message}`);
     } catch (e) {
       console.error('Failed to send error notification:', e);
     }

@@ -71,13 +71,11 @@ export default function RecordPage() {
 
               <div>
                 <p style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>
-                  {result.needsConfirmation ? 'Awaiting Confirmation' : 'Recording Processed'}
+                  {result.needsConfirmation ? 'Recording Saved' : 'Recording Processed'}
                 </p>
-                {result.tasksCreated !== undefined && (
-                  <p style={{ color: '#888' }}>
-                    {result.tasksCreated} task{result.tasksCreated !== 1 ? 's' : ''} created
-                  </p>
-                )}
+                <p style={{ color: '#888' }}>
+                  Processing in background...
+                </p>
               </div>
 
               {result.summary && (

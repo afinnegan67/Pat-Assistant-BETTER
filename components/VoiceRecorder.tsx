@@ -147,9 +147,8 @@ export default function VoiceRecorder({ onComplete }: VoiceRecorderProps) {
       if (response.ok) {
         onComplete({
           success: true,
-          summary: data.summary,
-          tasksCreated: data.tasksCreated,
-          needsConfirmation: data.needsConfirmation,
+          summary: data.message || 'Recording saved. Check Telegram for processing results.',
+          needsConfirmation: true,
         });
       } else {
         onComplete({ success: false, error: data.details || data.error || 'Unknown error' });

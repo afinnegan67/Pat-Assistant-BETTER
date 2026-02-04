@@ -157,6 +157,9 @@ function buildResultSummary(context: ResponseContext): string {
       case 'completed':
         return `Task completed: ${taskResult.task!.description}`;
 
+      case 'deleted':
+        return `Task deleted: ${taskResult.task!.description}`;
+
       case 'queried':
         if (!taskResult.tasks || taskResult.tasks.length === 0) {
           return 'No matching tasks found.';

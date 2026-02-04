@@ -11,6 +11,7 @@ import {
   createTask,
   updateTask,
   completeTask,
+  deleteTask,
   getTaskById,
   getTasksByProject,
   getPendingTasks,
@@ -19,10 +20,10 @@ import {
   searchTasks,
 } from '@/lib/db/queries';
 
-const TASK_SYSTEM_PROMPT = `You are the task management agent for Patrick's construction assistant. You handle creating, updating, completing, and querying tasks.
+const TASK_SYSTEM_PROMPT = `You are the task management agent for Patrick's construction assistant. You handle creating, updating, completing, deleting, and querying tasks.
 
 You will receive:
-- The user's intent (task_create, task_update, task_complete, task_query)
+- The user's intent (task_create, task_update, task_complete, task_delete, task_query)
 - Resolved entities (project IDs, task IDs if applicable)
 - The user's message
 - Today's conversation context
@@ -32,21 +33,29 @@ For task_create:
 - Link to project if mentioned (use resolved project_id)
 - Extract deadline if mentioned
 - Extract priority if mentioned (default: medium)
-- Return the created task details
+- Return action: 'create'
 
 For task_update:
 - Identify which task to update (from resolved entities or active_context)
-- Apply the requested changes
-- Return the updated task details
+- You CAN change: description, priority (low/medium/high/urgent), deadline, and STATUS
+- Valid status values: 'pending', 'on_hold', 'cancelled' (use 'complete' action for completing)
+- Put status changes in updates.status field
+- Return action: 'update'
 
 For task_complete:
 - Identify which task to complete
-- Mark status as 'completed', set completed_at timestamp
-- Return confirmation with task description
+- This marks the task as done/finished
+- Return action: 'complete'
+
+For task_delete:
+- Identify which task to delete
+- This PERMANENTLY REMOVES the task from the database
+- Use this when user wants to delete/remove a task entirely (not just complete it)
+- Return action: 'delete'
 
 For task_query:
 - Query tasks based on filters (project, status, deadline)
-- Return list of matching tasks`;
+- Return action: 'query'`;
 
 function formatContextForPrompt(context: AgentContext): string {
   const parts: string[] = [
@@ -106,6 +115,9 @@ export async function handleTaskIntent(context: AgentContext): Promise<TaskAgent
 
       case 'complete':
         return await handleTaskComplete(response, context);
+
+      case 'delete':
+        return await handleTaskDelete(response, context);
 
       case 'query':
         return await handleTaskQuery(response, context);
@@ -242,6 +254,45 @@ async function handleTaskComplete(
 
   return {
     action: 'completed',
+    task,
+    tasks: null,
+    error: null,
+  };
+}
+
+async function handleTaskDelete(
+  response: TaskAgentResponseOutput,
+  context: AgentContext
+): Promise<TaskAgentResult> {
+  // Get task ID from response, resolved entities, or context
+  const taskId = response.task_id
+    || context.resolvedEntities.tasks[0]?.id
+    || context.activeContext.current_task_id;
+
+  if (!taskId) {
+    return {
+      action: 'deleted',
+      task: null,
+      tasks: null,
+      error: 'Could not identify which task to delete',
+    };
+  }
+
+  // Verify task exists
+  const existingTask = await getTaskById(taskId);
+  if (!existingTask) {
+    return {
+      action: 'deleted',
+      task: null,
+      tasks: null,
+      error: 'Task not found',
+    };
+  }
+
+  const task = await deleteTask(taskId);
+
+  return {
+    action: 'deleted',
     task,
     tasks: null,
     error: null,

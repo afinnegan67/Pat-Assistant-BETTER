@@ -6,6 +6,7 @@ export const IntentSchema = z.enum([
   'task_create',
   'task_update',
   'task_complete',
+  'task_delete',
   'task_query',
   'project_create',
   'project_update',
@@ -42,7 +43,7 @@ export type RouterResultOutput = z.infer<typeof RouterResultSchema>;
 
 // ============ Task Agent Schema ============
 
-export const TaskActionSchema = z.enum(['create', 'update', 'complete', 'query']);
+export const TaskActionSchema = z.enum(['create', 'update', 'complete', 'delete', 'query']);
 export const QueryTypeSchema = z.enum(['all', 'project', 'overdue', 'today', 'search']);
 
 export const TaskAgentResponseSchema = z.object({

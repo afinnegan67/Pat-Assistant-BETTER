@@ -16,8 +16,9 @@ Patrick is a construction project manager. He tracks tasks, manages multiple job
 
 Classify the intent into exactly one of:
 - task_create: User wants to create a new task or to-do
-- task_update: User wants to modify an existing task (priority, deadline, description)
-- task_complete: User is marking a task as done
+- task_update: User wants to modify an existing task (priority, deadline, description, or change status to "on hold" or "cancelled")
+- task_complete: User is marking a task as done/finished/completed
+- task_delete: User wants to delete/remove a task entirely from the system (not just complete it - actually remove it)
 - task_query: User is asking about tasks (listing, filtering, searching)
 - project_create: User wants to create a new project/job site
 - project_update: User wants to modify a project (status, details)
@@ -125,6 +126,7 @@ export function getSpecialistAgent(intent: Intent): 'task' | 'project' | 'knowle
     case 'task_create':
     case 'task_update':
     case 'task_complete':
+    case 'task_delete':
     case 'task_query':
       return 'task';
 

@@ -140,6 +140,26 @@ export async function completeTask(taskId: string): Promise<Task> {
   return data as Task;
 }
 
+export async function deleteTask(taskId: string): Promise<Task> {
+  // First get the task so we can return it
+  const { data: task, error: fetchError } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('id', taskId)
+    .single();
+
+  if (fetchError) throw new Error(`Failed to find task: ${fetchError.message}`);
+
+  // Then delete it
+  const { error: deleteError } = await supabase
+    .from('tasks')
+    .delete()
+    .eq('id', taskId);
+
+  if (deleteError) throw new Error(`Failed to delete task: ${deleteError.message}`);
+  return task as Task;
+}
+
 export async function getTaskById(taskId: string): Promise<Task | null> {
   const { data, error } = await supabase
     .from('tasks')

@@ -105,6 +105,7 @@ export type Intent =
   | 'task_create'
   | 'task_update'
   | 'task_complete'
+  | 'task_delete'
   | 'task_query'
   | 'project_create'
   | 'project_update'
@@ -136,7 +137,7 @@ export interface RouterResult {
 }
 
 export interface TaskAgentResult {
-  action: 'created' | 'updated' | 'completed' | 'queried';
+  action: 'created' | 'updated' | 'completed' | 'deleted' | 'queried';
   task: Task | null;
   tasks: Task[] | null;
   error: string | null;

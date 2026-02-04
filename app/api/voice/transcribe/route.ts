@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { saveVoiceTranscript } from '@/lib/db/queries';
+import { saveVoiceTranscript, savePendingApproval } from '@/lib/db/queries';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
+import { processTranscript, generateTranscriptSummary } from '@/lib/agents/transcript';
+import { sendMessageToPatrick } from '@/lib/services/telegram';
 
 const elevenlabs = new ElevenLabsClient({
   apiKey: process.env.ELEVENLABS_API_KEY,
@@ -66,7 +68,7 @@ export async function POST(request: NextRequest) {
     // Use provided duration or estimate
     const durationSeconds = durationStr ? parseInt(durationStr, 10) : estimatedDuration;
 
-    // Save raw transcript to database - Supabase trigger will handle processing
+    // Save raw transcript to database
     console.log('Saving transcript to database...');
     const transcript = await saveVoiceTranscript({
       raw_content: transcriptText,
@@ -74,13 +76,44 @@ export async function POST(request: NextRequest) {
       source: 'webapp',
     });
     console.log('Transcript saved, ID:', transcript.id);
-    console.log('Supabase trigger will now process the transcript asynchronously');
 
-    // Return immediately - processing happens via Supabase trigger
+    // Process the transcript to extract tasks, knowledge, and projects
+    console.log('Processing transcript with AI...');
+    const processingResult = await processTranscript(transcriptText, 'webapp');
+    console.log('Processing complete:', JSON.stringify(processingResult, null, 2));
+
+    // Check if there's anything to save
+    const hasContent = processingResult.tasks.length > 0 ||
+                       processingResult.knowledge.length > 0 ||
+                       processingResult.new_projects.length > 0;
+
+    if (!hasContent) {
+      console.log('No tasks, knowledge, or projects extracted');
+      await sendMessageToPatrick('Processed your voice note but found nothing to extract. Was it just casual conversation?');
+      return NextResponse.json({
+        success: true,
+        transcriptId: transcript.id,
+        summary: 'Nothing to extract from this recording.',
+        tasksCreated: 0,
+        needsConfirmation: false,
+      });
+    }
+
+    // Save pending approval and notify Patrick
+    console.log('Saving pending approval...');
+    await savePendingApproval(transcript.id, processingResult);
+
+    // Generate summary and send to Patrick for approval
+    const summary = generateTranscriptSummary(processingResult);
+    console.log('Sending approval request to Patrick...');
+    await sendMessageToPatrick(`Voice note processed:\n\n${summary}\n\nLooks good? Reply "yes" to save, "no" to discard, or tell me what to change.`);
+
     return NextResponse.json({
       success: true,
       transcriptId: transcript.id,
-      message: 'Transcript saved. Processing will begin shortly.',
+      summary,
+      tasksCreated: processingResult.tasks.length,
+      needsConfirmation: true,
     });
 
   } catch (error) {

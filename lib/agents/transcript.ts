@@ -8,9 +8,12 @@ import type {
 } from '@/lib/utils/types';
 import { createTask, createProject, addProjectKnowledge, getProjectByName, getAllProjects } from '@/lib/db/queries';
 import { generateEmbedding } from '@/lib/db/embeddings';
-import { convertRelativeDate } from '@/lib/utils/date-helpers';
+import { convertRelativeDate, getCurrentPSTDateTime } from '@/lib/utils/date-helpers';
 
-const TRANSCRIPT_SYSTEM_PROMPT = `You are the transcript processor for Patrick's construction assistant. You analyze meeting transcripts and voice notes to extract:
+function getTranscriptSystemPrompt(): string {
+  return `You are the transcript processor for Patrick's construction assistant. You analyze meeting transcripts and voice notes to extract:
+
+Current date and time: ${getCurrentPSTDateTime()}
 
 1. TASKS: Action items, to-dos, things that need to be done
    - Include who mentioned it
@@ -25,6 +28,7 @@ const TRANSCRIPT_SYSTEM_PROMPT = `You are the transcript processor for Patrick's
 3. NEW PROJECTS: Any new job sites or projects mentioned that don't exist
 
 Be thorough but precise. Don't invent information not in the transcript.`;
+}
 
 /**
  * Process a transcript and extract tasks, knowledge, and new projects
@@ -48,7 +52,7 @@ export async function processTranscript(
         }),
       },
       toolChoice: { type: 'tool', toolName: 'extractFromTranscript' },
-      system: TRANSCRIPT_SYSTEM_PROMPT,
+      system: getTranscriptSystemPrompt(),
       prompt: `Existing projects: ${projectNames || 'None'}
 
 Transcript:

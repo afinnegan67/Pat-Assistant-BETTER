@@ -1,4 +1,27 @@
 /**
+ * Returns the current date and time in Pacific Standard Time, formatted for prompts.
+ * Example: "Tuesday, February 4, 2026 at 2:35 PM PST"
+ */
+export function getCurrentPSTDateTime(): string {
+  const now = new Date();
+
+  // Format in PST timezone
+  const options: Intl.DateTimeFormatOptions = {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/Los_Angeles',
+  };
+
+  const formatted = now.toLocaleString('en-US', options);
+  return `${formatted} PST`;
+}
+
+/**
  * Converts relative date strings (from AI extraction) to ISO 8601 timestamps.
  * Examples: "tomorrow morning", "Friday", "end of day", "next week"
  */

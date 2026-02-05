@@ -7,8 +7,12 @@ import type {
 } from '@/lib/utils/types';
 import { searchKnowledgeByText } from '@/lib/db/embeddings';
 import { getProjectKnowledge, getProjectById } from '@/lib/db/queries';
+import { getCurrentPSTDateTime } from '@/lib/utils/date-helpers';
 
-const KNOWLEDGE_SYSTEM_PROMPT = `You are the knowledge retrieval agent for Patrick's construction assistant. You answer questions about projects using semantic search over stored knowledge.
+function getKnowledgeSystemPrompt(): string {
+  return `You are the knowledge retrieval agent for Patrick's construction assistant. You answer questions about projects using semantic search over stored knowledge.
+
+Current date and time: ${getCurrentPSTDateTime()}
 
 You have access to:
 - Project knowledge chunks (decisions, notes, context from meetings)
@@ -22,6 +26,7 @@ When answering:
 - If you don't have the information, say so directly
 
 Be matter-of-fact and blunt. No fluff.`;
+}
 
 function formatKnowledgeChunks(chunks: ProjectKnowledge[]): string {
   if (chunks.length === 0) {
@@ -78,7 +83,7 @@ Address: ${project.address || 'Not specified'}`;
     // Generate answer using LLM
     const { text: answer } = await generateText({
       model: smartModel,
-      system: KNOWLEDGE_SYSTEM_PROMPT,
+      system: getKnowledgeSystemPrompt(),
       prompt: `Patrick asked: "${context.userMessage}"
 ${projectContext}
 

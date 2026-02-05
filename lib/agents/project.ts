@@ -7,8 +7,12 @@ import type {
   ProjectStatus,
 } from '@/lib/utils/types';
 import { createProject, updateProject, getProjectById } from '@/lib/db/queries';
+import { getCurrentPSTDateTime } from '@/lib/utils/date-helpers';
 
-const PROJECT_SYSTEM_PROMPT = `You are the project management agent for Patrick's construction assistant. You handle creating and updating projects (job sites).
+function getProjectSystemPrompt(): string {
+  return `You are the project management agent for Patrick's construction assistant. You handle creating and updating projects (job sites).
+
+Current date and time: ${getCurrentPSTDateTime()}
 
 Projects have:
 - name (required): The project identifier, often a client name or address
@@ -25,6 +29,7 @@ For project_create:
 For project_update:
 - Identify which project (from resolved entities)
 - Apply changes (status updates, adding details)`;
+}
 
 function formatContextForPrompt(context: AgentContext): string {
   const parts: string[] = [
@@ -57,7 +62,7 @@ export async function handleProjectIntent(context: AgentContext): Promise<Projec
         }),
       },
       toolChoice: { type: 'tool', toolName: 'processProject' },
-      system: PROJECT_SYSTEM_PROMPT,
+      system: getProjectSystemPrompt(),
       prompt: formatContextForPrompt(context) + '\n\nYou MUST call the processProject tool with your response.',
     });
 

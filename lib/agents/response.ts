@@ -9,8 +9,12 @@ import type {
   Task,
   CalendarEvent,
 } from '@/lib/utils/types';
+import { getCurrentPSTDateTime } from '@/lib/utils/date-helpers';
 
-const RESPONSE_SYSTEM_PROMPT = `You are the response generator for Patrick's construction assistant. You take structured results from specialist agents and generate natural language responses.
+function getResponseSystemPrompt(): string {
+  return `You are the response generator for Patrick's construction assistant. You take structured results from specialist agents and generate natural language responses.
+
+Current date and time: ${getCurrentPSTDateTime()}
 
 CRITICAL RULES:
 1. Be matter-of-fact and blunt. No fluff, no corporate speak, no sycophancy.
@@ -33,6 +37,7 @@ When generating responses:
 - If multiple matches found, ask which one they mean
 
 Generate only the response text, nothing else.`;
+}
 
 interface ResponseContext {
   intent: Intent;
@@ -203,7 +208,7 @@ export async function generateResponse(context: ResponseContext): Promise<string
   try {
     const { text } = await generateText({
       model: smartModel,
-      system: RESPONSE_SYSTEM_PROMPT,
+      system: getResponseSystemPrompt(),
       prompt: `Today's conversation so far:
 ${conversationHistory}
 
@@ -252,7 +257,7 @@ export async function generateGeneralChatResponse(
   try {
     const { text } = await generateText({
       model: smartModel,
-      system: RESPONSE_SYSTEM_PROMPT,
+      system: getResponseSystemPrompt(),
       prompt: `Today's conversation so far:
 ${conversationHistory}
 

@@ -3,8 +3,12 @@ import { fastModel } from '@/lib/services/ai-provider';
 import type { Task, CalendarEvent } from '@/lib/utils/types';
 import { getTodaysTasks, getOverdueTasks, getPendingTasks, getActiveProjects } from '@/lib/db/queries';
 import { getTodaysEvents, formatEventsForMessage } from '@/lib/services/calendar';
+import { getCurrentPSTDateTime } from '@/lib/utils/date-helpers';
 
-const BRIEFING_SYSTEM_PROMPT = `You generate Patrick's daily morning brief. You receive:
+function getBriefingSystemPrompt(): string {
+  return `You generate Patrick's daily morning brief. You receive:
+
+Current date and time: ${getCurrentPSTDateTime()}
 - Today's tasks (with deadlines and priorities)
 - Overdue tasks
 - Today's calendar events
@@ -35,6 +39,7 @@ Overdue:
 Calendar: 9am client meeting at Chen site, 2pm admin meeting.
 
 Total open tasks: 23 across 8 projects."`;
+}
 
 function formatTaskForBrief(task: Task): string {
   const parts = [task.description];
@@ -88,7 +93,7 @@ export async function generateDailyBrief(): Promise<{
 
     const { text: content } = await generateText({
       model: fastModel,
-      system: BRIEFING_SYSTEM_PROMPT,
+      system: getBriefingSystemPrompt(),
       prompt: `Today's tasks (${todaysTasks.length}):
 ${todaysTasksList}
 

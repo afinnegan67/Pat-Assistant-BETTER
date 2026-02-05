@@ -2,8 +2,12 @@ import { generateText } from 'ai';
 import { fastModel } from '@/lib/services/ai-provider';
 import type { Task } from '@/lib/utils/types';
 import { getTasksNeedingReminder, updateTaskReminder, getProjectById } from '@/lib/db/queries';
+import { getCurrentPSTDateTime } from '@/lib/utils/date-helpers';
 
-const REMINDER_SYSTEM_PROMPT = `You generate proactive reminders for Patrick. You check for:
+function getReminderSystemPrompt(): string {
+  return `You generate proactive reminders for Patrick. You check for:
+
+Current date and time: ${getCurrentPSTDateTime()}
 - Tasks overdue by 1+ days (remind daily)
 - Recurring tasks that are due
 - Project events coming up within reminder window
@@ -17,6 +21,7 @@ For upcoming project events: "Johnson deck kicks off in 5 days. Have you lined u
 Be direct. Create urgency where appropriate. Offer to help where the system can help.
 
 Generate a single reminder message that covers the most important items. Keep it under 3-4 sentences unless there are many urgent items.`;
+}
 
 function formatTaskForReminder(task: Task): string {
   const parts = [`"${task.description}"`];
@@ -72,7 +77,7 @@ export async function generateReminders(): Promise<{
 
     const { text: reminder } = await generateText({
       model: fastModel,
-      system: REMINDER_SYSTEM_PROMPT,
+      system: getReminderSystemPrompt(),
       prompt: `Tasks needing attention (${tasksNeedingReminder.length} total):
 ${tasksList}
 
@@ -124,7 +129,7 @@ export async function generateTaskReminder(task: Task): Promise<string> {
   try {
     const { text: reminder } = await generateText({
       model: fastModel,
-      system: REMINDER_SYSTEM_PROMPT,
+      system: getReminderSystemPrompt(),
       prompt: `Task: "${task.description}"${projectContext}
 Priority: ${task.priority}${overdueContext}
 

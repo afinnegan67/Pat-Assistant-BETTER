@@ -9,8 +9,12 @@ import type {
   TaskPriority,
 } from '@/lib/utils/types';
 import { buildContextSummary } from '@/lib/utils/context';
+import { getCurrentPSTDateTime } from '@/lib/utils/date-helpers';
 
-const ROUTER_SYSTEM_PROMPT = `You are a routing agent for Patrick's construction management assistant. Your job is to classify the user's intent and extract relevant entities.
+function getRouterSystemPrompt(): string {
+  return `You are a routing agent for Patrick's construction management assistant. Your job is to classify the user's intent and extract relevant entities.
+
+Current date and time: ${getCurrentPSTDateTime()}
 
 Patrick is a construction project manager. He tracks tasks, manages multiple job sites (projects), and needs to stay organized.
 
@@ -35,6 +39,7 @@ Also extract any mentioned:
 - Priority levels mentioned
 
 If the user says "that task" or "this project", check the active_context to resolve what they mean.`;
+}
 
 function formatMessagesForContext(messages: Message[]): string {
   if (messages.length === 0) return 'No previous messages today.';
@@ -63,7 +68,7 @@ export async function routeMessage(
         }),
       },
       toolChoice: { type: 'tool', toolName: 'classifyIntent' },
-      system: ROUTER_SYSTEM_PROMPT,
+      system: getRouterSystemPrompt(),
       prompt: `Active Context:
 ${buildContextSummary(activeContext)}
 

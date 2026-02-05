@@ -19,8 +19,12 @@ import {
   getTodaysTasks,
   searchTasks,
 } from '@/lib/db/queries';
+import { getCurrentPSTDateTime } from '@/lib/utils/date-helpers';
 
-const TASK_SYSTEM_PROMPT = `You are the task management agent for Patrick's construction assistant. You handle creating, updating, completing, deleting, and querying tasks.
+function getTaskSystemPrompt(): string {
+  return `You are the task management agent for Patrick's construction assistant. You handle creating, updating, completing, deleting, and querying tasks.
+
+Current date and time: ${getCurrentPSTDateTime()}
 
 You will receive:
 - The user's intent (task_create, task_update, task_complete, task_delete, task_query)
@@ -56,6 +60,7 @@ For task_delete:
 For task_query:
 - Query tasks based on filters (project, status, deadline)
 - Return action: 'query'`;
+}
 
 function formatContextForPrompt(context: AgentContext): string {
   const parts: string[] = [
@@ -96,7 +101,7 @@ export async function handleTaskIntent(context: AgentContext): Promise<TaskAgent
         }),
       },
       toolChoice: { type: 'tool', toolName: 'processTask' },
-      system: TASK_SYSTEM_PROMPT,
+      system: getTaskSystemPrompt(),
       prompt: formatContextForPrompt(context) + '\n\nYou MUST call the processTask tool with your response.',
     });
 

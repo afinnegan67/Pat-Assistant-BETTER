@@ -2,6 +2,7 @@ import { generateText, tool } from 'ai';
 import { fastModel } from '@/lib/services/ai-provider';
 import { z } from 'zod';
 import type { TranscriptProcessingResult } from '@/lib/utils/types';
+import { getCurrentPSTDateTime } from '@/lib/utils/date-helpers';
 
 const ApprovalDecisionSchema = z.object({
   action: z.enum(['approve', 'reject', 'edit', 'unrelated']),
@@ -46,6 +47,8 @@ export async function interpretApprovalResponse(
       },
       toolChoice: { type: 'tool', toolName: 'decideApproval' },
       system: `You are interpreting Patrick's response to a pending voice transcript that needs approval before saving to the database.
+
+Current date and time: ${getCurrentPSTDateTime()}
 
 PENDING DATA SUMMARY:
 - Tasks: ${pendingResult.tasks.length} tasks
